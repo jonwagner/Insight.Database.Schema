@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package>
+  <metadata>
+    <id>Insight.Database.Schema</id>
+    <version>1.0.0.0</version>
+    <title>Insight.Database.Schema</title>
+    <authors>Jon Wagner</authors>
+    <description>SQL database schema setup engine</description>
+    <language>en-US</language>
+  </metadata>
+  <files>
+    <file src="\bin\Release\Insight.Database.Schema.dll" target="lib" />
+  </files>
+</package>
