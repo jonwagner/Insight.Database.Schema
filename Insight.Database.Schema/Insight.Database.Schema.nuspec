@@ -1,14 +1,18 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <package>
-  <metadata>
-    <id>Insight.Database.Schema</id>
-    <version>1.0.0.0</version>
-    <title>Insight.Database.Schema</title>
-    <authors>Jon Wagner</authors>
-    <description>SQL database schema setup engine</description>
-    <language>en-US</language>
-  </metadata>
-  <files>
-    <file src="\bin\Release\Insight.Database.Schema.dll" target="lib" />
-  </files>
+	<metadata>
+		<id>Insight.Database.Schema</id>
+		<version>1.0.0.0</version>
+		<title>Insight.Database.Schema</title>
+		<authors>Jon Wagner</authors>
+		<description>A database installer engine that automatically handles most installation and upgrade issues, such as script ordering, and table and procedure updates.</description>
+		<language>en-US</language>
+		<projectUrl>http://github.com/jonwagner/Insight.Database.Schema</projectUrl>
+		<licenseUrl>http://opensource.org/licenses/ms-pl.html</licenseUrl>
+		<tags>Insight orm sql sqlserver shema installer</tags>
+	</metadata>
+	<files>
+		<file src="\bin\Release\Insight.Database.Schema.dll" target="lib" />
+		<file src="\bin\Release\Insight.Database.Schema.pdb" target="lib" />
+	</files>
 </package>
