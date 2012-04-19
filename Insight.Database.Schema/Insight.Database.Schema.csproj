@@ -64,7 +64,9 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="FxCop.FxCop" />
-    <None Include="Insight.Database.Schema.nuspec" />
+    <None Include="Insight.Database.Schema.nuspec">
+      <SubType>Designer</SubType>
+    </None>
     <None Include="packages.config" />
     <None Include="Properties\Settings.settings" />
   </ItemGroup>
