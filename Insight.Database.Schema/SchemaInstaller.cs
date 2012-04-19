@@ -68,7 +68,7 @@ namespace Insight.Database.Schema
 
                 // only create the database if it doesn't exist
                 if (createDatabase)
-                    ExecuteNonQuery (String.Format (CultureInfo.InvariantCulture, "CREATE DATABASE {0}", _databaseName));
+                    ExecuteNonQuery (String.Format (CultureInfo.InvariantCulture, "CREATE DATABASE [{0}]", _databaseName));
 
                 return createDatabase;
             }
@@ -97,7 +97,7 @@ namespace Insight.Database.Schema
                 ExecuteNonQuery(String.Format(CultureInfo.InvariantCulture, "exec sp_dboption N'{0}', N'single', N'true'", _databaseName));
 
                 // drop the database
-                ExecuteNonQuery (String.Format (CultureInfo.InvariantCulture, "DROP DATABASE {0}", _databaseName));
+                ExecuteNonQuery (String.Format (CultureInfo.InvariantCulture, "DROP DATABASE [{0}]", _databaseName));
                 return true;
             }
         }
