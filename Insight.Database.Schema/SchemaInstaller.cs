@@ -609,10 +609,10 @@ namespace Insight.Database.Schema
 
         private bool DoConvertTable (SchemaObject table, string beforeTable, string afterTable)
         {
-            if (OnConvertTable != null)
+            if (ConvertingTable != null)
             {
                 ConvertTableEventArgs ce = new ConvertTableEventArgs (SchemaEventType.ConvertTable, table, _connection, beforeTable, afterTable);
-                OnConvertTable (this, ce);
+                ConvertingTable (this, ce);
                 return ce.Converted;
             }
             return false;
@@ -1247,7 +1247,7 @@ namespace Insight.Database.Schema
         ///     If the event handler converts the data, return true.
         ///     Return false to allow the installer to use the default conversion.
         /// </remarks>
-        public event EventHandler<ConvertTableEventArgs> OnConvertTable;
+        public event EventHandler<ConvertTableEventArgs> ConvertingTable;
 
         /// <summary>
         /// Called before a table is updated
