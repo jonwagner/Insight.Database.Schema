@@ -1,0 +1,13 @@
+bin
+obj
+*.user
+*.suo
+*.docstates
+*.nupkg
+*.orig
+*.rej
+StyleCop.Cache
+<<<<<<< HEAD
+=======
+TestResult.xml
+>>>>>>> b8fac201f56506eef
