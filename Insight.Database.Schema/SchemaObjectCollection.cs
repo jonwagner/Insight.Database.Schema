@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Reflection;
@@ -124,26 +125,36 @@ namespace Insight.Database.Schema
         }
 
 		/// <summary>
-		/// Load a schema from the resource files
+		/// Load a schema from all of the .SQL resource files in an assembly.
 		/// </summary>
-		/// <returns></returns>
+		/// <param name="assembly">The assembly to load from.</param>
 		public void Load (Assembly assembly)
 		{
+			Load(assembly, resourceName => true);
+		}
+
+		/// <summary>
+		/// Load a schema from all of the .SQL resource files in an assembly that match a filter.
+		/// </summary>
+		/// <param name="assembly">The assembly to load from.</param>
+		/// <param name="resourceFilter">A predicate that returns true if the named resource should be loaded, false otherwise.</param>
+		public void Load(Assembly assembly, Predicate<string> resourceFilter)
+		{
 			// find all of the embedded sql in the given assembly
-			foreach (string resourceName in assembly.GetManifestResourceNames ())
+			foreach (string resourceName in assembly.GetManifestResourceNames().Where(rn => rn.EndsWith(".sql", StringComparison.OrdinalIgnoreCase)))
 			{
-				if (resourceName.EndsWith (".sql", StringComparison.OrdinalIgnoreCase))
+				if (resourceFilter(resourceName))
 				{
 					string sql;
 
 					// read in the sql
-					using (Stream stream = assembly.GetManifestResourceStream (resourceName))
-					using (StreamReader reader = new StreamReader (stream))
-						sql = reader.ReadToEnd ();
+					using (Stream stream = assembly.GetManifestResourceStream(resourceName))
+					using (StreamReader reader = new StreamReader(stream))
+						sql = reader.ReadToEnd();
 
 					// now load up the sql
-					using (StringReader sr = new StringReader (sql))
-						Load (sr);
+					using (StringReader sr = new StringReader(sql))
+						Load(sr);
 				}
 			}
 		}
