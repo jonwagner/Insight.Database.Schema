@@ -48,7 +48,7 @@ namespace Insight.Database.Schema
 		/// <summary>
 		/// The RegEx used to detect and decode an AutoProc.
 		/// </summary>
-		internal static readonly string AutoProcRegex = String.Format(CultureInfo.InvariantCulture, @"AUTOPROC\s+(?<type>\w+)\s+(?<tablename>{0})(\s+(?<name>\w+))?", SchemaObject.SqlNameExpression);
+		internal static readonly string AutoProcRegex = String.Format(CultureInfo.InvariantCulture, @"AUTOPROC\s+(?<type>\w+)\s+(?<tablename>{0})(\s+(?<name>[^\s]+))?", SchemaObject.SqlNameExpression);
 
 		/// <summary>
 		/// Gets the Sql for the AutoProc. Note that the objects must exist in the database so that the ColumnProvider can read them.
@@ -133,7 +133,7 @@ namespace Insight.Database.Schema
 
 		private string GenerateInsertSql(IList<ColumnDefinition> columns)
 		{
-			IEnumerable<ColumnDefinition> identities = columns.Where(c => c.IsIdentity);
+			IEnumerable<ColumnDefinition> identities = columns.Where(c => c.IsReadOnly);
 			IEnumerable<ColumnDefinition> insertable = columns.Where(c => !c.IsReadOnly);
 
 			// generate the sql for each proc and install them
@@ -191,7 +191,10 @@ namespace Insight.Database.Schema
 		private string MakeProcName(string type)
 		{
 			// use the user-specified name or make one from the type
-			return Name ?? SchemaObject.FormatSqlName(type + Singularizer.Singularize(SchemaObject.UnformatSqlName(_tableName)));
+			return SchemaObject.FormatSqlName(String.Format (CultureInfo.InvariantCulture, Name ?? "{0}{2}", 
+				type,
+				SchemaObject.UnformatSqlName(_tableName),
+				Singularizer.Singularize(SchemaObject.UnformatSqlName(_tableName))));
 		}
 
 		/// <summary>

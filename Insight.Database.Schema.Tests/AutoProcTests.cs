@@ -89,6 +89,22 @@ namespace Insight.Database.Schema.Tests
 		}
 		#endregion
 
+		#region Name Tests
+		[Test]
+		public void AutoProcAllowsForTemplateNames()
+		{
+			Mock<IColumnDefinitionProvider> columns = new Mock<IColumnDefinitionProvider>();
+			columns.Setup(c => c.GetColumns(It.IsAny<string>())).Returns(new List<ColumnDefinition>()
+			{
+				new ColumnDefinition() { Name = "ID", SqlType = "int", IsKey = true },
+			});
+
+			AutoProc p = new AutoProc("AUTOPROC Insert [Users] {1}_{0}", columns.Object, null);
+
+			Assert.AreEqual("CREATE PROCEDURE [Users_Insert] (@ID int) AS INSERT INTO [Users] (ID) OUTPUT  VALUES (@ID) GO ", p.Sql);
+		}
+		#endregion
+
 		#region Query Generation Tests
 		[Test]
 		public void TestAllGeneration()

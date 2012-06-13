@@ -55,6 +55,14 @@ So assume you have Beer.sql:
 
 	// After you modify your SQL, just run this again!
 
+## Get AutoProcs for Free ##
+
+Automatically generate standard stored procedures for your tables and have them updated automatically if you change your schema.
+
+	-- automatically generates Select/Insert/Update/Delete and more
+	AUTOPROC All [Beer]
+	GO
+
 ## Use Insight.Database to Access Your Data ##
 
 See [Insight.Database](https://github.com/jonwagner/Insight.Database)!
