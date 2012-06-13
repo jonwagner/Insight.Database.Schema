@@ -97,6 +97,11 @@ namespace Insight.Database.Schema
         /// </summary>
         PrimaryKey,
 
+		/// <summary>
+		/// Automatically generated Select, Insert, Update, Delete
+		/// </summary>
+		AutoProc,
+
         /// <summary>
         /// A constraint on a table
         /// </summary>

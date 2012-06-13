@@ -96,10 +96,10 @@ namespace Insight.Database.Schema
         /// </summary>
         /// <param name="schemaObject">The object to update</param>
         /// <param name="schemaGroup">The name of the schema group</param>
-        public void UpdateObject (SchemaObject schemaObject, string schemaGroup)
+        public void UpdateObject (SchemaObject schemaObject, string schemaGroup, SchemaInstaller installer, IEnumerable<SchemaObject> objects)
         {
             DeleteObject (schemaObject.Name);
-            RegistryTable.Rows.Add (new object[] { schemaGroup, schemaObject.Name, schemaObject.Signature, schemaObject.SchemaObjectType.ToString (), schemaObject.OriginalOrder });
+            RegistryTable.Rows.Add (new object[] { schemaGroup, schemaObject.Name, schemaObject.GetSignature(installer, objects), schemaObject.SchemaObjectType.ToString (), schemaObject.OriginalOrder });
         }
 
         /// <summary>

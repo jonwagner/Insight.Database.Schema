@@ -23,7 +23,7 @@ namespace Insight.Database.Schema
     /// <summary>
     /// Installs, upgrades, and uninstalls objects from a database
     /// </summary>
-    public sealed class SchemaInstaller : IDisposable
+    public sealed class SchemaInstaller : IDisposable, IDbInstallConnection
     {
         #region Constructors
         /// <summary>
@@ -209,8 +209,8 @@ namespace Insight.Database.Schema
 					{
 						foreach (SchemaObject schemaObject in schemaObjects)
 						{
-							if (registry.Contains (schemaObject.Name) && 
-								registry.GetSignature (schemaObject.Name) != schemaObject.Signature)
+							if (registry.Contains (schemaObject.Name) &&
+								registry.GetSignature(schemaObject.Name) != schemaObject.GetSignature(this, objects))
 							{
 								hasChanges = true;
 								break;
@@ -245,7 +245,7 @@ namespace Insight.Database.Schema
 						SchemaObject schemaObject = schemaObjects [i];
 
 						if (registry.Contains (schemaObject.Name) && 
-							registry.GetSignature (schemaObject.Name) != schemaObject.Signature &&
+							registry.GetSignature (schemaObject.Name) != schemaObject.GetSignature(this, objects) &&
 							!IsEasyToModify (schemaObject.SchemaObjectType) && 
 							!dropObjects.Contains (schemaObject.Name))
                             ScheduleUpdate (dropObjects, addObjects, tableUpdates, schemaObject, true);
@@ -264,13 +264,13 @@ namespace Insight.Database.Schema
 
                     // do the work
                     DropObjects (registry, dropObjects, addObjects);
-                    UpdateTables (schemaGroup, registry, addObjects, tableUpdates);
-                    CreateObjects (schemaGroup, registry, addObjects);
+                    UpdateTables (schemaGroup, registry, addObjects, tableUpdates, objects);
+					CreateObjects(schemaGroup, registry, addObjects, objects);
 					VerifyObjects (schemaObjects);
 
 					// update the sigs on all of the records
 					foreach (SchemaObject o in schemaObjects)
-						registry.UpdateObject(o, schemaGroup);
+						registry.UpdateObject(o, schemaGroup, this, objects);
 
                     // commit the changes
                     registry.Update ();
@@ -300,7 +300,7 @@ namespace Insight.Database.Schema
 						return true;
 
 					// if the signatures don't match, that's a diff
-					if (registry.GetSignature (schemaObject.Name) != schemaObject.Signature)
+					if (registry.GetSignature(schemaObject.Name) != schemaObject.GetSignature(this, schemaObjects))
 						return true;
 				}
 
@@ -483,7 +483,7 @@ namespace Insight.Database.Schema
             }
         }
 
-        private void UpdateTables (string schemaGroup, SchemaRegistry registry, List<SchemaObject> addObjects, List<SchemaObject> tableUpdates)
+        private void UpdateTables (string schemaGroup, SchemaRegistry registry, List<SchemaObject> addObjects, List<SchemaObject> tableUpdates, SchemaObjectCollection objects)
         {
             foreach (SchemaObject schemaObject in tableUpdates)
             {
@@ -493,15 +493,15 @@ namespace Insight.Database.Schema
 				DropTableDepencencies(schemaObject.Name, addObjects, TableScriptOptions.IncludeTableModifiers | TableScriptOptions.AllXmlIndexes, true);
 
                 // signature has changed, so update the object
-                UpdateTable (_connection, schemaObject);
-                registry.UpdateObject (schemaObject, schemaGroup);
+                UpdateTable (_connection, schemaObject, objects);
+                registry.UpdateObject (schemaObject, schemaGroup, this, objects);
 
                 if (UpdatedTable != null)
                     UpdatedTable (this, new SchemaEventArgs (SchemaEventType.AfterTableUpdate, schemaObject));
             }
         }
 
-        private void CreateObjects (string schemaGroup, SchemaRegistry registry, List<SchemaObject> addObjects)
+        private void CreateObjects (string schemaGroup, SchemaRegistry registry, List<SchemaObject> addObjects, SchemaObjectCollection objects)
         {
             // create objects
             foreach (SchemaObject schemaObject in addObjects)
@@ -509,10 +509,10 @@ namespace Insight.Database.Schema
                 if (CreatingObject != null)
                     CreatingObject (this, new SchemaEventArgs (SchemaEventType.BeforeCreate, schemaObject));
 
-				schemaObject.Install(this);
+				schemaObject.Install(this, objects);
 
                 if (schemaObject.SchemaObjectType != SchemaObjectType.Script)
-                    registry.UpdateObject (schemaObject, schemaGroup);
+					registry.UpdateObject(schemaObject, schemaGroup, this, objects);
 
                 if (CreatedObject != null)
                     CreatedObject (this, new SchemaEventArgs (SchemaEventType.AfterCreate, schemaObject));
@@ -527,7 +527,7 @@ namespace Insight.Database.Schema
 		{
             // create objects
 			foreach (SchemaObject schemaObject in schemaObjects)
-				schemaObject.Verify (this, _connection);
+				schemaObject.Verify(this, _connection, schemaObjects);
 		}
 
         #region Table Update Methods
@@ -536,7 +536,7 @@ namespace Insight.Database.Schema
         /// </summary>
         /// <param name="connection">The SqlConnection to use</param>
         /// <remarks>This creates a copy of the table data, updates the table, then copies the data back into the new table.</remarks>
-        private void UpdateTable (SqlConnection connection, SchemaObject schemaObject)
+        private void UpdateTable (SqlConnection connection, SchemaObject schemaObject, SchemaObjectCollection objects)
         {
             // copy the table to a temp table and drop the old table
             // NOTE: sp_rename can't be used because we're in a distributed transaction
@@ -548,7 +548,7 @@ namespace Insight.Database.Schema
             command.ExecuteNonQuery ();
 
             // create the new table using the script provided
-			schemaObject.Install(this);
+			schemaObject.Install(this, objects);
 
             if (!DoConvertTable (schemaObject, TempTableName, schemaObject.Name))
             {
@@ -1066,6 +1066,27 @@ namespace Insight.Database.Schema
 			ResetScripter ();
         }
 
+		/// <summary>
+		/// Execute sql directly
+		/// </summary>
+		/// <param name="sql">The sql to execute</param>
+		void IDbInstallConnection.ExecuteNonQuery(string sql)
+		{
+			ExecuteNonQuery(sql);
+		}
+
+		/// <summary>
+		/// Execute sql directly
+		/// </summary>
+		/// <param name="sql">The sql to execute</param>
+		IDataReader IDbInstallConnection.GetDataReader(string sql)
+		{
+			// never time out an upgrade
+			_command.CommandTimeout = 0;
+			_command.CommandText = sql;
+			return _command.ExecuteReader();
+		}
+
         /// <summary>
         /// Check to see if the database exists
         /// </summary>
@@ -1227,7 +1248,7 @@ namespace Insight.Database.Schema
 						}
 
 						SchemaObject schemaObject = new SchemaObject (type, name, "");
-						registry.UpdateObject (schemaObject, schemaGroup);
+						registry.UpdateObject(schemaObject, schemaGroup, this, null);
 					}
 				}
 

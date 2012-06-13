@@ -89,7 +89,13 @@ namespace Insight.Database.Schema
         /// The signature of the SchemaObject
         /// </summary>
         /// <value></value>
-        public string Signature { get { return CalculateSignature (Sql); } }
+		internal string GetSignature(SchemaInstaller installer, IEnumerable<SchemaObject> objects)
+		{
+			if (_type == Schema.SchemaObjectType.AutoProc)
+				return new AutoProc(_name, new SqlColumnDefinitionProvider(installer), objects).Signature;
+			else
+				return CalculateSignature(Sql);
+		}
 
         /// <summary>
         /// The order in which the script was added to the schema
@@ -109,13 +115,19 @@ namespace Insight.Database.Schema
         /// Install the object into the database
         /// </summary>
         /// <param name="connection">The database connection to use</param>
-		internal void Install(SchemaInstaller installer)
+		internal void Install(SchemaInstaller installer, IEnumerable<SchemaObject> objects)
         {
-            if (Sql.Length > 0)
+			string sql = Sql;
+
+			if (SchemaObjectType == Schema.SchemaObjectType.AutoProc)
+				sql = new AutoProc(Name, new SqlColumnDefinitionProvider(installer), objects).Sql;
+
+			if (sql.Length > 0)
             {
 				try
 				{
-					installer.ExecuteNonQuery (Sql);
+					foreach (string s in sql.Split(new string[] { "GO" }, StringSplitOptions.RemoveEmptyEntries))
+						installer.ExecuteNonQuery (s);
 				}
 				catch (Exception e)
 				{
@@ -124,8 +136,7 @@ namespace Insight.Database.Schema
             }
         }
 
-
-		internal void Verify (SchemaInstaller installer, SqlConnection connection)
+		internal void Verify (SchemaInstaller installer, SqlConnection connection, IEnumerable<SchemaObject> objects)
 		{
             SqlCommand command = new SqlCommand ();
             command.Connection = connection;
@@ -238,7 +249,7 @@ namespace Insight.Database.Schema
 			if (exists == 0)
 			{
 				installer.OnMissingObject (this, new SchemaEventArgs (SchemaEventType.MissingObject, this));
-				Install(installer);
+				Install(installer, objects);
 			}
 		}
 
@@ -346,11 +357,15 @@ namespace Insight.Database.Schema
 				case SchemaObjectType.BrokerPriority:
 					command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP BROKER PRIORITY {0}", objectName);
 					break;
+				case SchemaObjectType.AutoProc:
+					command.CommandText = new AutoProc(objectName, new SqlColumnDefinitionProvider(installer), null).DropSql;
+					break;
 			}
 
 			try
 			{
-				installer.ExecuteNonQuery (command.CommandText);
+				foreach (string sql in command.CommandText.Split(new string[] { "GO" }, StringSplitOptions.RemoveEmptyEntries))
+					installer.ExecuteNonQuery(sql);
 			}
 			catch (SqlException e)
 			{
@@ -366,7 +381,7 @@ namespace Insight.Database.Schema
         /// <param name="s">The string to hash</param>
         /// <returns>The hash code for the string</returns>
         /// <remarks>This is used to detect changes to a schema object</remarks>
-        private static string CalculateSignature (string s)
+        internal static string CalculateSignature (string s)
         {
             // Convert the string into an array of bytes.
             byte[] bytes = new UnicodeEncoding ().GetBytes (s);
@@ -488,7 +503,7 @@ namespace Insight.Database.Schema
 
 					// format the sql name so we don't have to worry about what people type
 					name = match.Result (_result);
-					if (type != SchemaObjectType.Permission)
+					if (type != SchemaObjectType.Permission && type != SchemaObjectType.AutoProc)
 					{
 						string [] pieces = name.Split (_sqlNameDivider);
 						name = "";
@@ -590,6 +605,7 @@ namespace Insight.Database.Schema
 				Add (new SqlParser (SchemaObjectType.Schema, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+SCHEMA\s+(?<name>{0})", SqlNameExpression), "SCHEMA $1"));
 				Add(new SqlParser(SchemaObjectType.Unused, String.Format(CultureInfo.InvariantCulture, @"SET\s+ANSI_NULLS", SqlNameExpression), null));
 				Add(new SqlParser(SchemaObjectType.Unused, String.Format(CultureInfo.InvariantCulture, @"SET\s+QUOTED_IDENTIFIER", SqlNameExpression), null));
+				Add(new SqlParser(SchemaObjectType.AutoProc, AutoProc.AutoProcRegex, "$0"));
 
 				Sort(new Comparison<SqlParser>(SqlParser.CompareByType));
             }

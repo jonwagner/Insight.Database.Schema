@@ -1,20 +1,17 @@
-﻿CREATE TYPE [dbo].[BeerTable] AS TABLE(
-	[Name] [nvarchar](128) NULL,
+﻿CREATE TABLE [Beer] (
+	[ID] [int] IDENTITY,
+	[Name] [nvarchar](128) NOT NULL,
 	[Flavor] [nvarchar](128) NULL,
-	[OriginalGravity] [decimal](18, 2) NULL
-)
-GO
-
-CREATE TYPE [dbo].[BeerNameTable] AS TABLE(
-	[Name] [nvarchar](128) NULL
-)
-GO
-
-CREATE TABLE [dbo].[Beer](
-	[Name] [nvarchar](128) NULL,
-	[Flavor] [nvarchar](128) NULL,
-	[OriginalGravity] [decimal](18, 2) NULL
+	[OriginalGravity] [decimal](18, 2) NULL,
+	[Details][varchar](MAX)
 ) ON [PRIMARY]
+GO
+ALTER TABLE [Beer] WITH NOCHECK ADD CONSTRAINT [PK_Beer] PRIMARY KEY NONCLUSTERED
+(
+	[ID], [Name]	
+)
+GO
+-- AUTOPROC All [Beer]
 GO
 
 CREATE TABLE [dbo].[Glasses](
@@ -30,21 +27,16 @@ CREATE TABLE [dbo].[Servings](
 ) ON [PRIMARY]
 GO
 
-CREATE PROCEDURE [dbo].[UpdateBeer] (@Beer [BeerTable] READONLY)
-AS
-	UPDATE Beer
-		SET Flavor = up.Flavor, OriginalGravity = up.OriginalGravity
-		FROM @Beer up
-		WHERE Beer.Name = up.Name
+CREATE TYPE [dbo].[BeerTable] AS TABLE(
+	[Name] [nvarchar](128) NULL,
+	[Flavor] [nvarchar](128) NULL,
+	[OriginalGravity] [decimal](18, 2) NULL
+)
 GO
 
-CREATE PROCEDURE [dbo].[InsertBeer]
-	@Name [nvarchar](128),
-	@Flavor [nvarchar](128),
-	@OriginalGravity [decimal](18,2)
-AS
-	INSERT INTO Beer (Name, Flavor, OriginalGravity)
-	VALUES (@Name, @Flavor, @OriginalGravity)
+CREATE TYPE [dbo].[BeerNameTable] AS TABLE(
+	[Name] [nvarchar](128) NULL
+)
 GO
 
 CREATE PROCEDURE [dbo].[GetServings]
@@ -64,10 +56,4 @@ CREATE PROCEDURE [dbo].[FindBeer]
 	@Name [nvarchar](128)
 AS
 	SELECT * FROM Beer WHERE Name LIKE @Name
-GO
-
-CREATE PROCEDURE [dbo].[DeleteBeer]
-	@Name [nvarchar](128)
-AS
-	DELETE FROM Beer WHERE Name = @Name
 GO

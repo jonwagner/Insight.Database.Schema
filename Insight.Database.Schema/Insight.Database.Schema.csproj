@@ -42,7 +42,11 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="AutoProc.cs" />
+    <Compile Include="ColumnDefinition.cs" />
     <Compile Include="ConvertTableEventArgs.cs" />
+    <Compile Include="IColumnDefinitionProvider.cs" />
+    <Compile Include="IDbInstallConnection.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Properties\Resources.Designer.cs" />
     <Compile Include="Properties\Settings.Designer.cs" />
@@ -56,6 +60,8 @@
     <Compile Include="SchemaObjectType.cs" />
     <Compile Include="SchemaParsingException.cs" />
     <Compile Include="SchemaRegistry.cs" />
+    <Compile Include="Singularizer.cs" />
+    <Compile Include="SqlColumnDefinitionProvider.cs" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Properties\Resources.resx">

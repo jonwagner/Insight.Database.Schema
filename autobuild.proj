@@ -65,7 +65,9 @@
 		<Delete Files="%(NuPackFiles.Identity)" />
 		<!-- Build the solution -->
 		<MSBuild Projects="%(SolutionFiles.Identity)" Properties="Configuration=$(Configuration)" StopOnFirstFailure="true" />
-		<!-- Build the NuGet Packages -->
+    <!-- Test Before Packaging -->
+    <Exec Command="packages\NUnit.2.6.0.12054\tools\\nunit-console .\Insight.Database.Schema.Tests\bin\$(Configuration)\Insight.Database.Schema.Tests.dll"/>
+    <!-- Build the NuGet Packages -->
 		<MakeDir Directories="Build\Output" />
 		<Exec Command="nuget.exe pack %(NuGetFiles.Identity) /OutputDirectory Build\Output" />
 		<!-- Make sure that we revert the assembly info -->
