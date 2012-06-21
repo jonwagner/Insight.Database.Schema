@@ -8,10 +8,30 @@
 GO
 ALTER TABLE [Beer] WITH NOCHECK ADD CONSTRAINT [PK_Beer] PRIMARY KEY NONCLUSTERED
 (
-	[ID], [Name]	
+	[ID]	
 )
 GO
 -- AUTOPROC All [Beer]
+GO
+
+CREATE TYPE [dbo].[BeerTable] AS TABLE(
+	[ID] [int],
+	[Name] [nvarchar](128) NOT NULL,
+	[Flavor] [nvarchar](128) NULL,
+	[OriginalGravity] [decimal](18, 2) NULL,
+	[Details][varchar](MAX)
+)
+GO
+
+CREATE PROCEDURE [UpdateMultipleBeer]
+	@Beer [BeerTable] READONLY
+AS
+	MERGE INTO Beer AS t
+	USING (SELECT * FROM @Beer) as s
+	ON (s.ID = t.ID)
+	WHEN MATCHED THEN
+		UPDATE SET Name = s.Name, Flavor = s.Flavor, OriginalGravity = s.OriginalGravity, Details = s.Details
+	;
 GO
 
 CREATE TABLE [dbo].[Glasses](
@@ -27,12 +47,6 @@ CREATE TABLE [dbo].[Servings](
 ) ON [PRIMARY]
 GO
 
-CREATE TYPE [dbo].[BeerTable] AS TABLE(
-	[Name] [nvarchar](128) NULL,
-	[Flavor] [nvarchar](128) NULL,
-	[OriginalGravity] [decimal](18, 2) NULL
-)
-GO
 
 CREATE TYPE [dbo].[BeerNameTable] AS TABLE(
 	[Name] [nvarchar](128) NULL
