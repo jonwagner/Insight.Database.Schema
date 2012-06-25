@@ -42,8 +42,8 @@ namespace Insight.Database.Schema
                     {"teeth", "Tooth"},
                     {"geese", "Goose"},
                     // and now the more standard rules.
-                    {"(.*)ives?", "$1ife"},
-                    {"(.*)ves?", "$1f"},
+                    {"wives?", "wife"},
+                    {"(.*)lves?", "$1lf"},
                     // ie, wolf, wife
                     {"(.*)men$", "$1man"},
                     {"(.+[aeiou])ys$", "$1y"},
@@ -56,6 +56,7 @@ namespace Insight.Database.Schema
                     {"(.*)ices", @"$1ex"},
                     // ie, matrix, index
                     {"(octop|vir)i$", "$1us"},
+                    {"(.+(ase))s$", @"$1"},
                     {"(.+(s|x|sh|ch))es$", @"$1"},
                     {"(.+)s", @"$1"}
                 };

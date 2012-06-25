@@ -31,6 +31,11 @@ namespace Insight.Database.Schema
 		private string _tableName;
 
 		/// <summary>
+		/// The singular form of the name of the table that we are generating procedures for.
+		/// </summary>
+		private string _singularTableName;
+
+		/// <summary>
 		/// The name of the procedure to generate.
 		/// </summary>
 		internal string Name { get; private set; }
@@ -48,7 +53,7 @@ namespace Insight.Database.Schema
 		/// <summary>
 		/// The RegEx used to detect and decode an AutoProc.
 		/// </summary>
-		internal static readonly string AutoProcRegex = String.Format(CultureInfo.InvariantCulture, @"AUTOPROC\s+(?<type>\w+)\s+(?<tablename>{0})(\s+(?<name>[^\s]+))?", SchemaObject.SqlNameExpression);
+		internal static readonly string AutoProcRegex = String.Format(CultureInfo.InvariantCulture, @"AUTOPROC\s+(?<type>\w+)\s+(?<tablename>{0})(\s+Single=(?<single>[^\s]+))?(\s+Name=(?<name>[^\s]+))?", SchemaObject.SqlNameExpression);
 
 		/// <summary>
 		/// Gets the Sql for the AutoProc. Note that the objects must exist in the database so that the ColumnProvider can read them.
@@ -69,9 +74,14 @@ namespace Insight.Database.Schema
 			_columnProvider = columnProvider;
 
 			// break up the name into its components
-			var match = new Regex(AutoProcRegex).Match(name);
+			var match = new Regex(AutoProcRegex, RegexOptions.IgnoreCase).Match(name);
 			_type = (ProcTypes)Enum.Parse(typeof(ProcTypes), match.Groups["type"].Value);
 			_tableName = SchemaObject.FormatSqlName(match.Groups["tablename"].Value);
+
+			if (!String.IsNullOrWhiteSpace(match.Groups["single"].Value))
+				_singularTableName = SchemaObject.FormatSqlName(match.Groups["single"].Value);
+			else
+				_singularTableName = SchemaObject.FormatSqlName(Singularizer.Singularize(SchemaObject.UnformatSqlName(match.Groups["tablename"].Value)));
 
 			// get the specified name
 			string procName = match.Groups["name"].Value;
@@ -142,8 +152,12 @@ namespace Insight.Database.Schema
 			sb.Append(String.Join(", ", insertable.Select(col => String.Format(CultureInfo.InvariantCulture, "@{0} {1}", col.Name, col.SqlType))));
 			sb.AppendFormat(") AS INSERT INTO {0} (", _tableName);
 			sb.Append(String.Join(", ", insertable.Select(col => String.Format(CultureInfo.InvariantCulture, "{0}", col.Name))));
-			sb.Append(") OUTPUT ");
-			sb.Append(String.Join(", ", identities.Select(col => String.Format(CultureInfo.InvariantCulture, "Inserted.{0}", col.Name))));
+			sb.Append(")");
+			if (identities.Any())
+			{
+				sb.Append(" OUTPUT ");
+				sb.Append(String.Join(", ", identities.Select(col => String.Format(CultureInfo.InvariantCulture, "Inserted.{0}", col.Name))));
+			}
 			sb.Append(" VALUES (");
 			sb.Append(String.Join(", ", insertable.Select(col => String.Format(CultureInfo.InvariantCulture, "@{0}", col.Name))));
 			sb.Append(")");
@@ -161,10 +175,17 @@ namespace Insight.Database.Schema
 			StringBuilder sb = new StringBuilder();
 			sb.AppendFormat("CREATE PROCEDURE {0} (", MakeProcName("Update"));
 			sb.Append(String.Join(", ", inputs.Select(col => String.Format(CultureInfo.InvariantCulture, "@{0} {1}", col.Name, col.SqlType))));
-			sb.AppendFormat(") AS UPDATE {0} SET ", _tableName);
-			sb.Append(String.Join(", ", updatable.Select(col => String.Format(CultureInfo.InvariantCulture, "{0}=@{0}", col.Name))));
-			sb.Append(" WHERE ");
-			sb.Append(String.Join(" AND ", keys.Select(col => String.Format(CultureInfo.InvariantCulture, "{0}=@{0}", col.Name))));
+			sb.Append(") AS ");
+
+			if (updatable.Any())
+			{
+				sb.AppendFormat("UPDATE {0} SET ", _tableName);
+				sb.Append(String.Join(", ", updatable.Select(col => String.Format(CultureInfo.InvariantCulture, "{0}=@{0}", col.Name))));
+				sb.Append(" WHERE ");
+				sb.Append(String.Join(" AND ", keys.Select(col => String.Format(CultureInfo.InvariantCulture, "{0}=@{0}", col.Name))));
+			}
+			else
+				sb.AppendFormat("RAISERROR (N'There are no UPDATEable fields on {0}', 18, 0)", _tableName);
 
 			return sb.ToString();
 		}
@@ -193,8 +214,8 @@ namespace Insight.Database.Schema
 			// use the user-specified name or make one from the type
 			return SchemaObject.FormatSqlName(String.Format (CultureInfo.InvariantCulture, Name ?? "{0}{2}", 
 				type,
-				SchemaObject.UnformatSqlName(_tableName),
-				Singularizer.Singularize(SchemaObject.UnformatSqlName(_tableName))));
+				_tableName,
+				_singularTableName));
 		}
 
 		/// <summary>

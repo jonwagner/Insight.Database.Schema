@@ -28,7 +28,7 @@ namespace Insight.Database.Schema.Sample
 			installer.Install("BeerGarten", schema);
 
 			// uninstall the schema
-			if (args.Length > 0 && args[0].ToUpperInvariant() == "uninstall")
+			if (args.Length > 0 && args[0].ToUpperInvariant() == "UNINSTALL")
 			{
 				Console.WriteLine("Uninstalling");
 				installer.Uninstall("BeerGarten");

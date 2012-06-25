@@ -85,7 +85,7 @@ namespace Insight.Database.Schema.Tests
 
 			AutoProc p = new AutoProc("AUTOPROC Insert [Beer]", columns.Object, null);
 
-			Assert.AreEqual("CREATE PROCEDURE [InsertBeer] (@ID int, @Name varchar(256), @OriginalGravity decimal(18,2)) AS INSERT INTO [Beer] (ID, Name, OriginalGravity) OUTPUT  VALUES (@ID, @Name, @OriginalGravity) GO ", p.Sql);
+			Assert.AreEqual("CREATE PROCEDURE [InsertBeer] (@ID int, @Name varchar(256), @OriginalGravity decimal(18,2)) AS INSERT INTO [Beer] (ID, Name, OriginalGravity) VALUES (@ID, @Name, @OriginalGravity) GO ", p.Sql);
 		}
 		#endregion
 
@@ -99,9 +99,9 @@ namespace Insight.Database.Schema.Tests
 				new ColumnDefinition() { Name = "ID", SqlType = "int", IsKey = true },
 			});
 
-			AutoProc p = new AutoProc("AUTOPROC Insert [Users] {1}_{0}", columns.Object, null);
+			AutoProc p = new AutoProc("AUTOPROC Insert [Users] Name={1}_{0}", columns.Object, null);
 
-			Assert.AreEqual("CREATE PROCEDURE [Users_Insert] (@ID int) AS INSERT INTO [Users] (ID) OUTPUT  VALUES (@ID) GO ", p.Sql);
+			Assert.AreEqual("CREATE PROCEDURE [Users_Insert] (@ID int) AS INSERT INTO [Users] (ID) VALUES (@ID) GO ", p.Sql);
 		}
 		#endregion
 
@@ -118,7 +118,7 @@ namespace Insight.Database.Schema.Tests
 			});
 
 			AutoProc p = new AutoProc("AUTOPROC All [Beer]", columns.Object, null);
-			Assert.AreEqual("CREATE PROCEDURE [SelectBeer] (@ID int) AS SELECT * FROM [Beer] WHERE ID=@ID GO CREATE PROCEDURE [InsertBeer] (@ID int, @Name varchar(256), @OriginalGravity decimal(18,2)) AS INSERT INTO [Beer] (ID, Name, OriginalGravity) OUTPUT  VALUES (@ID, @Name, @OriginalGravity) GO CREATE PROCEDURE [UpdateBeer] (@ID int, @Name varchar(256), @OriginalGravity decimal(18,2)) AS UPDATE [Beer] SET Name=@Name, OriginalGravity=@OriginalGravity WHERE ID=@ID GO CREATE PROCEDURE [DeleteBeer] (@ID int) AS DELETE FROM [Beer] WHERE ID=@ID GO ", p.Sql);
+			Assert.AreEqual("CREATE PROCEDURE [SelectBeer] (@ID int) AS SELECT * FROM [Beer] WHERE ID=@ID GO CREATE PROCEDURE [InsertBeer] (@ID int, @Name varchar(256), @OriginalGravity decimal(18,2)) AS INSERT INTO [Beer] (ID, Name, OriginalGravity) VALUES (@ID, @Name, @OriginalGravity) GO CREATE PROCEDURE [UpdateBeer] (@ID int, @Name varchar(256), @OriginalGravity decimal(18,2)) AS UPDATE [Beer] SET Name=@Name, OriginalGravity=@OriginalGravity WHERE ID=@ID GO CREATE PROCEDURE [DeleteBeer] (@ID int) AS DELETE FROM [Beer] WHERE ID=@ID GO ", p.Sql);
 		}
 
 		[Test]
@@ -143,14 +143,14 @@ namespace Insight.Database.Schema.Tests
 			Mock<IColumnDefinitionProvider> columns = new Mock<IColumnDefinitionProvider>();
 			columns.Setup(c => c.GetColumns(It.IsAny<string>())).Returns(new List<ColumnDefinition>()
 			{
-				new ColumnDefinition() { Name = "ID", SqlType = "int", IsKey = true },
+				new ColumnDefinition() { Name = "ID", SqlType = "int", IsKey = true, IsIdentity = true, IsReadOnly = true },
 				new ColumnDefinition() { Name = "Name", SqlType = "varchar(256)", IsKey = false },
 				new ColumnDefinition() { Name = "OriginalGravity", SqlType = "decimal(18,2)", IsKey = false },
 			});
 
 			AutoProc p = new AutoProc("AUTOPROC Insert [Beer] InsertBeer", columns.Object, null);
 
-			Assert.AreEqual("CREATE PROCEDURE [InsertBeer] (@ID int, @Name varchar(256), @OriginalGravity decimal(18,2)) AS INSERT INTO [Beer] (ID, Name, OriginalGravity) OUTPUT  VALUES (@ID, @Name, @OriginalGravity) GO ", p.Sql);
+			Assert.AreEqual("CREATE PROCEDURE [InsertBeer] (@Name varchar(256), @OriginalGravity decimal(18,2)) AS INSERT INTO [Beer] (Name, OriginalGravity) OUTPUT Inserted.ID VALUES (@Name, @OriginalGravity) GO ", p.Sql);
 		}
 
 		[Test]
@@ -184,11 +184,42 @@ namespace Insight.Database.Schema.Tests
 
 			Assert.AreEqual("CREATE PROCEDURE [DeleteBeer] (@ID int) AS DELETE FROM [Beer] WHERE ID=@ID GO ", p.Sql);
 		}
+
+		[Test]
+		public void InsertWithNoIdentitiesShouldOmitOutputStatement()
+		{
+			Mock<IColumnDefinitionProvider> columns = new Mock<IColumnDefinitionProvider>();
+			columns.Setup(c => c.GetColumns(It.IsAny<string>())).Returns(new List<ColumnDefinition>()
+			{
+				new ColumnDefinition() { Name = "ID", SqlType = "int", IsKey = true },
+				new ColumnDefinition() { Name = "Name", SqlType = "varchar(256)", IsKey = false },
+				new ColumnDefinition() { Name = "OriginalGravity", SqlType = "decimal(18,2)", IsKey = false },
+			});
+
+			AutoProc p = new AutoProc("AUTOPROC Insert [Beer] InsertBeer", columns.Object, null);
+
+			Assert.AreEqual("CREATE PROCEDURE [InsertBeer] (@ID int, @Name varchar(256), @OriginalGravity decimal(18,2)) AS INSERT INTO [Beer] (ID, Name, OriginalGravity) VALUES (@ID, @Name, @OriginalGravity) GO ", p.Sql);
+		}
+
+		[Test]
+		public void UpdateWithOnlyKeysShouldRaiseError()
+		{
+			Mock<IColumnDefinitionProvider> columns = new Mock<IColumnDefinitionProvider>();
+			columns.Setup(c => c.GetColumns(It.IsAny<string>())).Returns(new List<ColumnDefinition>()
+			{
+				new ColumnDefinition() { Name = "ID", SqlType = "int", IsKey = true },
+				new ColumnDefinition() { Name = "Name", SqlType = "varchar(256)", IsKey = true },
+			});
+
+			AutoProc p = new AutoProc("AUTOPROC Update [Beer] UpdateBeer", columns.Object, null);
+
+			Assert.AreEqual("CREATE PROCEDURE [UpdateBeer] (@ID int, @Name varchar(256)) AS RAISERROR (N'There are no UPDATEable fields on [Beer]', 18, 0) GO ", p.Sql);
+		}
 		#endregion
 
 		#region Singular Tests
 		[Test]
-		public void TestPeopleToPerson()
+		public void TestSingularSqlGeneration()
 		{
 			Mock<IColumnDefinitionProvider> columns = new Mock<IColumnDefinitionProvider>();
 			columns.Setup(c => c.GetColumns(It.IsAny<string>())).Returns(new List<ColumnDefinition>()
@@ -202,7 +233,7 @@ namespace Insight.Database.Schema.Tests
 		}
 
 		[Test]
-		public void TestOctopiToOctopus()
+		public void TestSingularOverride()
 		{
 			Mock<IColumnDefinitionProvider> columns = new Mock<IColumnDefinitionProvider>();
 			columns.Setup(c => c.GetColumns(It.IsAny<string>())).Returns(new List<ColumnDefinition>()
@@ -210,23 +241,9 @@ namespace Insight.Database.Schema.Tests
 				new ColumnDefinition() { Name = "ID", SqlType = "int", IsKey = true },
 			});
 
-			AutoProc p = new AutoProc("AUTOPROC Delete [Octopi]", columns.Object, null);
+			AutoProc p = new AutoProc("AUTOPROC Delete [People] Single=Foo", columns.Object, null);
 
-			Assert.AreEqual("CREATE PROCEDURE [DeleteOctopus] (@ID int) AS DELETE FROM [Octopi] WHERE ID=@ID GO ", p.Sql);
-		}
-
-		[Test]
-		public void TestDeerToDeer()
-		{
-			Mock<IColumnDefinitionProvider> columns = new Mock<IColumnDefinitionProvider>();
-			columns.Setup(c => c.GetColumns(It.IsAny<string>())).Returns(new List<ColumnDefinition>()
-			{
-				new ColumnDefinition() { Name = "ID", SqlType = "int", IsKey = true },
-			});
-
-			AutoProc p = new AutoProc("AUTOPROC Delete [Deer]", columns.Object, null);
-
-			Assert.AreEqual("CREATE PROCEDURE [DeleteDeer] (@ID int) AS DELETE FROM [Deer] WHERE ID=@ID GO ", p.Sql);
+			Assert.AreEqual("CREATE PROCEDURE [DeleteFoo] (@ID int) AS DELETE FROM [People] WHERE ID=@ID GO ", p.Sql);
 		}
 		#endregion
 	}
