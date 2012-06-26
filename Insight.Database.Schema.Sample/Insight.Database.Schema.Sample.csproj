@@ -55,6 +55,15 @@
       <Name>Insight.Database.Schema</Name>
     </ProjectReference>
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Glasses.sql" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Sizes.sql" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Servings.sql" />
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.

@@ -18,7 +18,7 @@ namespace Insight.Database.Schema.Tests
 
 		#region Singular Tests
 		[Test]
-		public void TestPeopleToPerson()
+		public void TestSinglePlural()
 		{
 			Test("person", "people");
 			Test("octopus", "octopi");
@@ -30,6 +30,7 @@ namespace Insight.Database.Schema.Tests
 			Test("turf", "turfs");
 			Test("case", "cases");
 			Test("objective", "objectives");
+			Test("size", "sizes");
 		}
 		#endregion
 	}

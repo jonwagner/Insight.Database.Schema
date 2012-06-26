@@ -35,6 +35,15 @@ namespace Insight.Database.Schema
 		/// True if the column is an identity.
 		/// </summary>
 		public bool IsIdentity { get; set; }
-	}
 
+		/// <summary>
+		/// The name of the column formatted properly for use as a SQL column.
+		/// </summary>
+		public string ColumnName { get { return SchemaObject.FormatSqlName(Name); } }
+
+		/// <summary>
+		/// The name of the column formatted properly for use as a SQL parameter.
+		/// </summary>
+		public string ParameterName { get { return "@" + Name; } }
+	}
 }
