@@ -23,7 +23,7 @@ namespace Insight.Database.Schema
 		/// <summary>
 		/// A string that is added to the hash of the dependencies so that the AutoProc can be forced to change if the internal implementation changes.
 		/// </summary>
-		private static string VersionSignature = "1.1.2.23";
+		private static string VersionSignature = "1.1.3.1";
 
 		/// <summary>
 		/// The name of the table that we are generating procedures for.
@@ -60,7 +60,7 @@ namespace Insight.Database.Schema
 		/// <summary>
 		/// The RegEx used to detect and decode an AutoProc.
 		/// </summary>
-		internal static readonly string AutoProcRegex = String.Format(CultureInfo.InvariantCulture, @"AUTOPROC\s+(?<type>\w+)\s+(?<tablename>{0})(\s+Single=(?<single>[^\s]+))?(\s+Name=(?<name>[^\s]+))?(\s+ExecuteAsOwner=(?<execasowner>[^\s]+))?", SchemaObject.SqlNameExpression);
+		internal static readonly string AutoProcRegex = String.Format(CultureInfo.InvariantCulture, @"AUTOPROC\s+(?<type>\w+)\s+(?<tablename>{0})(\s+Name=(?<name>[^\s]+))?(\s+Single=(?<single>[^\s]+))?(\s+Plural=(?<plural>[^\s]+))?(\s+ExecuteAsOwner=(?<execasowner>[^\s]+))?", SchemaObject.SqlNameExpression);
 
 		/// <summary>
 		/// The signature of the AutoProc. This is derived from the table and the private key(s) in the script collection.
@@ -587,17 +587,38 @@ namespace Insight.Database.Schema
 			sb.AppendLine("(");
 			sb.Append(Join(columns, ",", "{1} {2} = NULL"));
 			sb.AppendLine(",");
-			sb.AppendLine(Join(columns, ",", "{1}Operator [varchar](5) = '='"));
+			sb.AppendLine("\t@Top [int] = NULL,");
+			sb.AppendLine("\t@OrderBy [nvarchar](256) = NULL,");
+			sb.AppendLine("\t@ThenBy [nvarchar](256) = NULL,");
+			sb.AppendLine(Join(columns, ",", "{1}Operator [varchar](10) = '='"));
 			sb.AppendLine(")");
 			if(_executeAsOwner)
 				sb.AppendLine("WITH EXECUTE AS OWNER");
 			sb.AppendLine("AS");
-			sb.AppendFormat("DECLARE @sql [nvarchar](MAX) = 'SELECT * FROM {0} WHERE 1=1'", _tableName);
+			sb.AppendLine("DECLARE @sql [nvarchar](MAX) = 'SELECT '");
+			sb.AppendLine("\tIF @Top IS NOT NULL SET @sql = @sql + 'TOP (@Top) '");
+			sb.AppendFormat("SET @sql = @sql + ' * FROM {0} WHERE 1=1'", _tableName);
 			sb.AppendLine();
-			sb.AppendLine(Join(columns, "", "IF {1} IS NOT NULL SELECT @sql = @sql + ' AND {1} ' + {1}Operator + ' {0}'"));
-			sb.AppendLine("EXEC sp_executesql @sql, N'");
+
+			// handle where clauses
+			sb.AppendLine(Join(columns, "", "SELECT @sql = @sql + CASE\r\n\tWHEN {1}Operator IN ('=', '<', '>', '<=', '>=', '<>', 'LIKE') AND {1} IS NOT NULL THEN ' AND {0} ' + {1}Operator + ' {1}'" +
+				"\r\n\tWHEN {1}Operator IN ('IS NULL', 'IS NOT NULL') THEN ' AND {0} ' + {1}Operator" +
+				"\r\n\tWHEN {1}Operator IS NOT NULL AND {1} IS NOT NULL THEN ' OPERATOR NOT SUPPORTED ON {0} '" +
+				"\r\n\tELSE ''" +
+				"\r\n\tEND"));
+
+			// handle order by
+			sb.AppendLine("IF @OrderBy IS NOT NULL SET @sql = @sql + ' ORDER BY ' + CASE WHEN @OrderBy IN (");
+			sb.AppendLine(Join(columns, ",", "'{0}', '{0} DESC'"));
+			sb.AppendLine(") THEN @OrderBy ELSE ' ORDER BY INVALID COLUMN ' END");
+			sb.AppendLine("IF @OrderBy IS NOT NULL AND @ThenBy IS NOT NULL SET @sql = @sql + CASE WHEN @ThenBy IN (");
+			sb.AppendLine(Join(columns, ",", "'{0}', '{0} DESC'"));
+			sb.AppendLine(") THEN @ThenBy ELSE ' ORDER BY INVALID COLUMN ' END");
+
+			sb.AppendLine();
+			sb.AppendLine("EXEC sp_executesql @sql, N'@Top [int], ");
 			sb.AppendLine(Join(columns, ",", "{1} {2}"));
-			sb.AppendLine("',");
+			sb.AppendLine("', @Top=@Top,");
 			sb.AppendLine(Join(columns, ",", "{1}={1}"));
 
 			return sb.ToString();
