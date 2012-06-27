@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
 using System.Globalization;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -126,7 +127,7 @@ namespace Insight.Database.Schema
             {
 				try
 				{
-					foreach (string s in sql.Split(new string[] { "GO" }, StringSplitOptions.RemoveEmptyEntries))
+					foreach (string s in _goSplit.Split(sql).Where(piece => !String.IsNullOrWhiteSpace(piece)))
 						installer.ExecuteNonQuery (s);
 				}
 				catch (Exception e)
@@ -135,6 +136,7 @@ namespace Insight.Database.Schema
 				}
             }
         }
+		private static Regex _goSplit = new Regex (@"[\s\b]GO[\s\b]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
 		internal void Verify (SchemaInstaller installer, SqlConnection connection, IEnumerable<SchemaObject> objects)
 		{
