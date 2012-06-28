@@ -99,7 +99,7 @@ namespace Insight.Database.Schema.Tests
 
 			AutoProc p = new AutoProc("AUTOPROC Insert [Beer]", columns.Object, null);
 
-			Assert.AreEqual("CREATE PROCEDURE [InsertBeer]\r\n(\r\n\t@ID int,\r\n\t@Name varchar(256),\r\n\t@OriginalGravity decimal(18,2)\r\n)\r\nAS\r\nINSERT INTO [Beer]\r\n(\r\n\t[ID],\r\n\t[Name],\r\n\t[OriginalGravity]\r\n)\r\nVALUES\r\n(\r\n\t@ID,\r\n\t@Name,\r\n\t@OriginalGravity\r\n)\r\n GO\r\n", p.Sql);
+			Assert.AreEqual("CREATE PROCEDURE [InsertBeer]\r\n(\r\n\t@ID int,\r\n\t@Name varchar(256),\r\n\t@OriginalGravity decimal(18,2)\r\n)\r\nAS\r\nINSERT INTO [Beer]\r\n(\r\n\t[ID],\r\n\t[Name],\r\n\t[OriginalGravity]\r\n)\r\nVALUES\r\n(\r\n\t@ID,\r\n\t@Name,\r\n\t@OriginalGravity\r\n)\r\n\r\nGO\r\n", p.Sql);
 		}
 		#endregion
 
@@ -115,7 +115,7 @@ namespace Insight.Database.Schema.Tests
 
 			AutoProc p = new AutoProc("AUTOPROC Insert [Users] Name={1}_{0}", columns.Object, null);
 
-			Assert.AreEqual("CREATE PROCEDURE [Users_Insert]\r\n(\r\n\t@ID int\r\n)\r\nAS\r\nINSERT INTO [Users]\r\n(\r\n\t[ID]\r\n)\r\nVALUES\r\n(\r\n\t@ID\r\n)\r\n GO\r\n", p.Sql);
+			Assert.AreEqual("CREATE PROCEDURE [Users_Insert]\r\n(\r\n\t@ID int\r\n)\r\nAS\r\nINSERT INTO [Users]\r\n(\r\n\t[ID]\r\n)\r\nVALUES\r\n(\r\n\t@ID\r\n)\r\n\r\nGO\r\n", p.Sql);
 		}
 		#endregion
 
@@ -148,7 +148,7 @@ namespace Insight.Database.Schema.Tests
 		{
 			AutoProc p = new AutoProc("AUTOPROC Select [Beer] SelectBeer", Columns, null);
 
-			Assert.AreEqual("CREATE PROCEDURE [SelectBeer]\r\n(\r\n\t@ID int\r\n)\r\nAS\r\nSELECT * FROM [Beer] WHERE \r\n\t[ID]=@ID\r\n GO\r\n", p.Sql);
+			Assert.AreEqual("CREATE PROCEDURE [SelectBeer]\r\n(\r\n\t@ID int\r\n)\r\nAS\r\nSELECT * FROM [Beer] WHERE \r\n\t[ID]=@ID\r\n\r\nGO\r\n", p.Sql);
 		}
 
 		[Test]
@@ -156,7 +156,7 @@ namespace Insight.Database.Schema.Tests
 		{
 			AutoProc p = new AutoProc("AUTOPROC Insert [Beer] InsertBeer", Columns, null);
 
-			Assert.AreEqual("CREATE PROCEDURE [InsertBeer]\r\n(\r\n\t@Name varchar(256),\r\n\t@OriginalGravity decimal(18,2)\r\n)\r\nAS\r\nINSERT INTO [Beer]\r\n(\r\n\t[Name],\r\n\t[OriginalGravity]\r\n)\r\nOUTPUT\r\n\tInserted.[ID]\r\nVALUES\r\n(\r\n\t@Name,\r\n\t@OriginalGravity\r\n)\r\n GO\r\n", p.Sql);
+			Assert.AreEqual("CREATE PROCEDURE [InsertBeer]\r\n(\r\n\t@Name varchar(256),\r\n\t@OriginalGravity decimal(18,2)\r\n)\r\nAS\r\nINSERT INTO [Beer]\r\n(\r\n\t[Name],\r\n\t[OriginalGravity]\r\n)\r\nOUTPUT\r\n\tInserted.[ID]\r\nVALUES\r\n(\r\n\t@Name,\r\n\t@OriginalGravity\r\n)\r\n\r\nGO\r\n", p.Sql);
 		}
 
 		[Test]
@@ -164,7 +164,7 @@ namespace Insight.Database.Schema.Tests
 		{
 			AutoProc p = new AutoProc("AUTOPROC Update [Beer] UpdateBeer", Columns, null);
 
-			Assert.AreEqual("CREATE PROCEDURE [UpdateBeer]\r\n(\r\n\t@ID int,\r\n\t@Name varchar(256),\r\n\t@OriginalGravity decimal(18,2)\r\n)\r\nAS\r\nUPDATE [Beer] SET\r\n\t[Name]=@Name,\r\n\t[OriginalGravity]=@OriginalGravity\r\nWHERE\r\n\t[ID]=@ID\r\n GO\r\n", p.Sql);
+			Assert.AreEqual("CREATE PROCEDURE [UpdateBeer]\r\n(\r\n\t@ID int,\r\n\t@Name varchar(256),\r\n\t@OriginalGravity decimal(18,2)\r\n)\r\nAS\r\nUPDATE [Beer] SET\r\n\t[Name]=@Name,\r\n\t[OriginalGravity]=@OriginalGravity\r\nWHERE\r\n\t[ID]=@ID\r\n\r\nGO\r\n", p.Sql);
 		}
 
 		[Test]
@@ -172,7 +172,7 @@ namespace Insight.Database.Schema.Tests
 		{
 			AutoProc p = new AutoProc("AUTOPROC Delete [Beer] DeleteBeer", Columns, null);
 
-			Assert.AreEqual("CREATE PROCEDURE [DeleteBeer]\r\n(\r\n\t@ID int\r\n)\r\nAS\r\nDELETE FROM [Beer] WHERE\r\n\t[ID]=@ID\r\n GO\r\n", p.Sql);
+			Assert.AreEqual("CREATE PROCEDURE [DeleteBeer]\r\n(\r\n\t@ID int\r\n)\r\nAS\r\nDELETE FROM [Beer] WHERE\r\n\t[ID]=@ID\r\n\r\nGO\r\n", p.Sql);
 		}
 
 		[Test]
@@ -188,7 +188,7 @@ namespace Insight.Database.Schema.Tests
 
 			AutoProc p = new AutoProc("AUTOPROC Insert [Beer] InsertBeer", columns.Object, null);
 
-			Assert.AreEqual("CREATE PROCEDURE [InsertBeer]\r\n(\r\n\t@ID int,\r\n\t@Name varchar(256),\r\n\t@OriginalGravity decimal(18,2)\r\n)\r\nAS\r\nINSERT INTO [Beer]\r\n(\r\n\t[ID],\r\n\t[Name],\r\n\t[OriginalGravity]\r\n)\r\nVALUES\r\n(\r\n\t@ID,\r\n\t@Name,\r\n\t@OriginalGravity\r\n)\r\n GO\r\n", p.Sql);
+			Assert.AreEqual("CREATE PROCEDURE [InsertBeer]\r\n(\r\n\t@ID int,\r\n\t@Name varchar(256),\r\n\t@OriginalGravity decimal(18,2)\r\n)\r\nAS\r\nINSERT INTO [Beer]\r\n(\r\n\t[ID],\r\n\t[Name],\r\n\t[OriginalGravity]\r\n)\r\nVALUES\r\n(\r\n\t@ID,\r\n\t@Name,\r\n\t@OriginalGravity\r\n)\r\n\r\nGO\r\n", p.Sql);
 		}
 
 		[Test]
@@ -203,7 +203,7 @@ namespace Insight.Database.Schema.Tests
 
 			AutoProc p = new AutoProc("AUTOPROC Update [Beer] UpdateBeer", columns.Object, null);
 
-			Assert.AreEqual("CREATE PROCEDURE [UpdateBeer]\r\n(\r\n\t@ID int,\r\n\t@Name varchar(256)\r\n)\r\nAS\r\nRAISERROR (N'There are no UPDATEable fields on [Beer]', 18, 0)\r\n GO\r\n", p.Sql);
+			Assert.AreEqual("CREATE PROCEDURE [UpdateBeer]\r\n(\r\n\t@ID int,\r\n\t@Name varchar(256)\r\n)\r\nAS\r\nRAISERROR (N'There are no UPDATEable fields on [Beer]', 18, 0)\r\n\r\nGO\r\n", p.Sql);
 		}
 		#endregion
 
@@ -213,7 +213,7 @@ namespace Insight.Database.Schema.Tests
 		{
 			AutoProc p = new AutoProc("AUTOPROC Table [Beer]", Columns, null);
 
-			Assert.AreEqual("CREATE TYPE [BeerTable]\r\nAS TABLE\r\n(\r\n\t[ID] int,\r\n\t[Name] varchar(256),\r\n\t[OriginalGravity] decimal(18,2)\r\n)\r\n GO\r\n", p.Sql);
+			Assert.AreEqual("CREATE TYPE [BeerTable]\r\nAS TABLE\r\n(\r\n\t[ID] int,\r\n\t[Name] varchar(256),\r\n\t[OriginalGravity] decimal(18,2)\r\n)\r\n\r\nGO\r\n", p.Sql);
 		}
 
 		[Test]
@@ -221,7 +221,7 @@ namespace Insight.Database.Schema.Tests
 		{
 			AutoProc p = new AutoProc("AUTOPROC InsertMany [Beer]", Columns, null);
 
-			Assert.AreEqual("CREATE PROCEDURE [InsertBeers] (@Beer [BeerTable] READONLY)\r\nAS\r\nINSERT INTO [Beer]\r\n(\r\n\t[Name],\r\n\t[OriginalGravity]\r\n)\r\nOUTPUT\r\n\tInserted.[ID]\r\nSELECT\r\n\t[Name],\r\n\t[OriginalGravity]\r\nFROM @Beer\r\n GO\r\n", p.Sql);
+			Assert.AreEqual("CREATE PROCEDURE [InsertBeers] (@Beer [BeerTable] READONLY)\r\nAS\r\nINSERT INTO [Beer]\r\n(\r\n\t[Name],\r\n\t[OriginalGravity]\r\n)\r\nOUTPUT\r\n\tInserted.[ID]\r\nSELECT\r\n\t[Name],\r\n\t[OriginalGravity]\r\nFROM @Beer\r\n\r\nGO\r\n", p.Sql);
 		}
 		#endregion
 
@@ -263,7 +263,7 @@ namespace Insight.Database.Schema.Tests
 
 			AutoProc p = new AutoProc("AUTOPROC Delete [People]", columns.Object, null);
 
-			Assert.AreEqual("CREATE PROCEDURE [DeletePerson]\r\n(\r\n\t@ID int\r\n)\r\nAS\r\nDELETE FROM [People] WHERE\r\n\t[ID]=@ID\r\n GO\r\n", p.Sql);
+			Assert.AreEqual("CREATE PROCEDURE [DeletePerson]\r\n(\r\n\t@ID int\r\n)\r\nAS\r\nDELETE FROM [People] WHERE\r\n\t[ID]=@ID\r\n\r\nGO\r\n", p.Sql);
 		}
 
 		[Test]
@@ -277,7 +277,7 @@ namespace Insight.Database.Schema.Tests
 
 			AutoProc p = new AutoProc("AUTOPROC Delete [People] Single=Foo", columns.Object, null);
 
-			Assert.AreEqual("CREATE PROCEDURE [DeleteFoo]\r\n(\r\n\t@ID int\r\n)\r\nAS\r\nDELETE FROM [People] WHERE\r\n\t[ID]=@ID\r\n GO\r\n", p.Sql);
+			Assert.AreEqual("CREATE PROCEDURE [DeleteFoo]\r\n(\r\n\t@ID int\r\n)\r\nAS\r\nDELETE FROM [People] WHERE\r\n\t[ID]=@ID\r\n\r\nGO\r\n", p.Sql);
 		}
 		#endregion
 	}

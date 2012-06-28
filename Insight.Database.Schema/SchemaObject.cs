@@ -136,7 +136,7 @@ namespace Insight.Database.Schema
 				}
             }
         }
-		private static Regex _goSplit = new Regex (@"[\s\b]GO[\s\b]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+		private static Regex _goSplit = new Regex (@"^\s*GO\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.Multiline);
 
 		internal void Verify (SchemaInstaller installer, SqlConnection connection, IEnumerable<SchemaObject> objects)
 		{

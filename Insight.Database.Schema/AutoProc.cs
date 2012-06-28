@@ -23,7 +23,7 @@ namespace Insight.Database.Schema
 		/// <summary>
 		/// A string that is added to the hash of the dependencies so that the AutoProc can be forced to change if the internal implementation changes.
 		/// </summary>
-		private static string VersionSignature = "1.1.3.1";
+		private static string VersionSignature = "1.1.3.2";
 
 		/// <summary>
 		/// The name of the table that we are generating procedures for.
@@ -155,25 +155,26 @@ namespace Insight.Database.Schema
 			// generate the sql
 			string sql = "";
 
-			if (_type.HasFlag(ProcTypes.Table)) sql += GenerateTableSql(columns) + " GO" + Environment.NewLine;
-			if (_type.HasFlag(ProcTypes.IdTable)) sql += GenerateIdTableSql(columns) + " GO" + Environment.NewLine;
+			if (_type.HasFlag(ProcTypes.Table)) sql += GenerateTableSql(columns) + _batchDivider;
+			if (_type.HasFlag(ProcTypes.IdTable)) sql += GenerateIdTableSql(columns) + _batchDivider;
 
-			if (_type.HasFlag(ProcTypes.Select)) sql += GenerateSelectSql(columns) + " GO" + Environment.NewLine;
-			if (_type.HasFlag(ProcTypes.Insert)) sql += GenerateInsertSql(columns) + " GO" + Environment.NewLine;
-			if (_type.HasFlag(ProcTypes.Update)) sql += GenerateUpdateSql(columns) + " GO" + Environment.NewLine;
-			if (_type.HasFlag(ProcTypes.Upsert)) sql += GenerateUpsertSql(columns) + " GO" + Environment.NewLine;
-			if (_type.HasFlag(ProcTypes.Delete)) sql += GenerateDeleteSql(columns) + " GO" + Environment.NewLine;
+			if (_type.HasFlag(ProcTypes.Select)) sql += GenerateSelectSql(columns) + _batchDivider;
+			if (_type.HasFlag(ProcTypes.Insert)) sql += GenerateInsertSql(columns) + _batchDivider;
+			if (_type.HasFlag(ProcTypes.Update)) sql += GenerateUpdateSql(columns) + _batchDivider;
+			if (_type.HasFlag(ProcTypes.Upsert)) sql += GenerateUpsertSql(columns) + _batchDivider;
+			if (_type.HasFlag(ProcTypes.Delete)) sql += GenerateDeleteSql(columns) + _batchDivider;
 
-			if (_type.HasFlag(ProcTypes.SelectMany)) sql += GenerateSelectManySql(columns) + " GO" + Environment.NewLine;
-			if (_type.HasFlag(ProcTypes.InsertMany)) sql += GenerateInsertManySql(columns) + " GO" + Environment.NewLine;
-			if (_type.HasFlag(ProcTypes.UpdateMany)) sql += GenerateUpdateManySql(columns) + " GO" + Environment.NewLine;
-			if (_type.HasFlag(ProcTypes.UpsertMany)) sql += GenerateUpsertManySql(columns) + " GO" + Environment.NewLine;
-			if (_type.HasFlag(ProcTypes.DeleteMany)) sql += GenerateDeleteManySql(columns) + " GO" + Environment.NewLine;
+			if (_type.HasFlag(ProcTypes.SelectMany)) sql += GenerateSelectManySql(columns) + _batchDivider;
+			if (_type.HasFlag(ProcTypes.InsertMany)) sql += GenerateInsertManySql(columns) + _batchDivider;
+			if (_type.HasFlag(ProcTypes.UpdateMany)) sql += GenerateUpdateManySql(columns) + _batchDivider;
+			if (_type.HasFlag(ProcTypes.UpsertMany)) sql += GenerateUpsertManySql(columns) + _batchDivider;
+			if (_type.HasFlag(ProcTypes.DeleteMany)) sql += GenerateDeleteManySql(columns) + _batchDivider;
 
-			if (_type.HasFlag(ProcTypes.Find)) sql += GenerateFindSql(columns) + " GO" + Environment.NewLine;
+			if (_type.HasFlag(ProcTypes.Find)) sql += GenerateFindSql(columns) + _batchDivider;
 
 			return sql;
 		}
+		private string _batchDivider = Environment.NewLine + "GO" + Environment.NewLine;
 		#endregion
 
 		#region Standard CRUD Sql
@@ -685,20 +686,20 @@ namespace Insight.Database.Schema
 			get
 			{
 				string sql = "";
-				if (_type.HasFlag(ProcTypes.Select)) sql += MakeDropStatment("Select", plural: false) + " GO ";
-				if (_type.HasFlag(ProcTypes.Insert)) sql += MakeDropStatment("Insert", plural: false) + " GO ";
-				if (_type.HasFlag(ProcTypes.Update)) sql += MakeDropStatment("Update", plural: false) + " GO ";
-				if (_type.HasFlag(ProcTypes.Upsert)) sql += MakeDropStatment("Upsert", plural: false) + " GO ";
-				if (_type.HasFlag(ProcTypes.Delete)) sql += MakeDropStatment("Delete", plural: false) + " GO ";
-				if (_type.HasFlag(ProcTypes.SelectMany)) sql += MakeDropStatment("Select", plural: true) + " GO ";
-				if (_type.HasFlag(ProcTypes.InsertMany)) sql += MakeDropStatment("Insert", plural: true) + " GO ";
-				if (_type.HasFlag(ProcTypes.UpdateMany)) sql += MakeDropStatment("Update", plural: true) + " GO ";
-				if (_type.HasFlag(ProcTypes.UpsertMany)) sql += MakeDropStatment("Upsert", plural: true) + " GO ";
-				if (_type.HasFlag(ProcTypes.DeleteMany)) sql += MakeDropStatment("Delete", plural: true) + " GO ";
-				if (_type.HasFlag(ProcTypes.Find)) sql += MakeDropStatment("Find", plural: true) + " GO ";
+				if (_type.HasFlag(ProcTypes.Select)) sql += MakeDropStatment("Select", plural: false) + _batchDivider;
+				if (_type.HasFlag(ProcTypes.Insert)) sql += MakeDropStatment("Insert", plural: false) + _batchDivider;
+				if (_type.HasFlag(ProcTypes.Update)) sql += MakeDropStatment("Update", plural: false) + _batchDivider;
+				if (_type.HasFlag(ProcTypes.Upsert)) sql += MakeDropStatment("Upsert", plural: false) + _batchDivider;
+				if (_type.HasFlag(ProcTypes.Delete)) sql += MakeDropStatment("Delete", plural: false) + _batchDivider;
+				if (_type.HasFlag(ProcTypes.SelectMany)) sql += MakeDropStatment("Select", plural: true) + _batchDivider;
+				if (_type.HasFlag(ProcTypes.InsertMany)) sql += MakeDropStatment("Insert", plural: true) + _batchDivider;
+				if (_type.HasFlag(ProcTypes.UpdateMany)) sql += MakeDropStatment("Update", plural: true) + _batchDivider;
+				if (_type.HasFlag(ProcTypes.UpsertMany)) sql += MakeDropStatment("Upsert", plural: true) + _batchDivider;
+				if (_type.HasFlag(ProcTypes.DeleteMany)) sql += MakeDropStatment("Delete", plural: true) + _batchDivider;
+				if (_type.HasFlag(ProcTypes.Find)) sql += MakeDropStatment("Find", plural: true) + _batchDivider;
 
-				if (_type.HasFlag(ProcTypes.Table)) sql += MakeTableDropStatment("Table") + " GO ";
-				if (_type.HasFlag(ProcTypes.IdTable)) sql += MakeTableDropStatment("IdTable") + " GO ";
+				if (_type.HasFlag(ProcTypes.Table)) sql += MakeTableDropStatment("Table") + _batchDivider;
+				if (_type.HasFlag(ProcTypes.IdTable)) sql += MakeTableDropStatment("IdTable") + _batchDivider;
 
 				return sql;
 			}
