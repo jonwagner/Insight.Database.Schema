@@ -23,7 +23,7 @@ namespace Insight.Database.Schema
 		/// <summary>
 		/// A string that is added to the hash of the dependencies so that the AutoProc can be forced to change if the internal implementation changes.
 		/// </summary>
-		private static string VersionSignature = "1.1.3.2";
+		private static string VersionSignature = "1.1.6.1";
 
 		/// <summary>
 		/// The name of the table that we are generating procedures for.
@@ -285,6 +285,7 @@ namespace Insight.Database.Schema
 			IEnumerable<ColumnDefinition> inputs = columns.Where(c => c.IsKey || !c.IsReadOnly);
 			IEnumerable<ColumnDefinition> keys = columns.Where(c => c.IsKey);
 			IEnumerable<ColumnDefinition> updatable = columns.Where(c => !c.IsKey && !c.IsReadOnly);
+			IEnumerable<ColumnDefinition> insertable = columns.Where(c => !c.IsReadOnly);
 			IEnumerable<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly);
 
 			// generate the sql for each proc and install them
@@ -310,16 +311,22 @@ namespace Insight.Database.Schema
 				sb.AppendLine("(");
 				sb.AppendLine(Join(keys, " AND", "t.{0} = s.{0}"));
 				sb.AppendLine(")");
-				sb.AppendLine("WHEN MATCHED THEN UPDATE SET");
-				sb.AppendLine(Join(updatable, ",", "\tt.{0} = s.{0}"));
-				sb.AppendLine("WHEN NOT MATCHED BY TARGET THEN INSERT");
-				sb.AppendLine("(");
-				sb.AppendLine(Join(updatable, ",", "{0}"));
-				sb.AppendLine(")");
-				sb.AppendLine("VALUES");
-				sb.AppendLine("(");
-				sb.AppendLine(Join(updatable, ",", "s.{0}"));
-				sb.AppendLine(")");
+				if (updatable.Any())
+				{
+					sb.AppendLine("WHEN MATCHED THEN UPDATE SET");
+					sb.AppendLine(Join(updatable, ",", "\tt.{0} = s.{0}"));
+				}
+				if (insertable.Any())
+				{
+					sb.AppendLine("WHEN NOT MATCHED BY TARGET THEN INSERT");
+					sb.AppendLine("(");
+					sb.AppendLine(Join(insertable, ",", "{0}"));
+					sb.AppendLine(")");
+					sb.AppendLine("VALUES");
+					sb.AppendLine("(");
+					sb.AppendLine(Join(insertable, ",", "s.{0}"));
+					sb.AppendLine(")");
+				}
 				if (outputs.Any())
 				{
 					sb.AppendLine("OUTPUT");
@@ -506,8 +513,9 @@ namespace Insight.Database.Schema
 		private string GenerateUpsertManySql(IList<ColumnDefinition> columns)
 		{
 			IEnumerable<ColumnDefinition> keys = columns.Where(c => c.IsKey);
+			IEnumerable<ColumnDefinition> updatable = columns.Where(c => !c.IsKey && !c.IsReadOnly);
+			IEnumerable<ColumnDefinition> insertable = columns.Where(c => !c.IsReadOnly);
 			IEnumerable<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly);
-			IEnumerable<ColumnDefinition> updatable = columns.Where(c => !c.IsReadOnly);
 
 			string parameterName = SchemaObject.UnformatSqlName(_singularTableName);
 
@@ -524,16 +532,22 @@ namespace Insight.Database.Schema
 			sb.AppendLine("(");
 			sb.AppendLine(Join(keys, " AND", "t.{0} = s.{0}"));
 			sb.AppendLine(")");
-			sb.AppendLine("WHEN MATCHED THEN UPDATE SET");
-			sb.AppendLine(Join(updatable, ",", "t.{0} = s.{0}"));
-			sb.AppendLine("WHEN NOT MATCHED BY TARGET THEN INSERT");
-			sb.AppendLine("(");
-			sb.AppendLine(Join(updatable, ",", "{0}"));
-			sb.AppendLine(")");
-			sb.AppendLine("VALUES");
-			sb.AppendLine("(");
-			sb.AppendLine(Join(updatable, ",", "s.{0}"));
-			sb.AppendLine(")");
+			if (updatable.Any())
+			{
+				sb.AppendLine("WHEN MATCHED THEN UPDATE SET");
+				sb.AppendLine(Join(updatable, ",", "t.{0} = s.{0}"));
+			}
+			if (insertable.Any())
+			{
+				sb.AppendLine("WHEN NOT MATCHED BY TARGET THEN INSERT");
+				sb.AppendLine("(");
+				sb.AppendLine(Join(insertable, ",", "{0}"));
+				sb.AppendLine(")");
+				sb.AppendLine("VALUES");
+				sb.AppendLine("(");
+				sb.AppendLine(Join(insertable, ",", "s.{0}"));
+				sb.AppendLine(")");
+			}
 			if (outputs.Any())
 			{
 				sb.AppendLine("OUTPUT");
