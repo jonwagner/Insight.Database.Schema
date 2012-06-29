@@ -320,8 +320,11 @@ namespace Insight.Database.Schema
 				sb.AppendLine("(");
 				sb.AppendLine(Join(updatable, ",", "s.{0}"));
 				sb.AppendLine(")");
-				sb.AppendLine("OUTPUT");
-				sb.AppendLine(Join(outputs, ",", "Inserted.{0}"));
+				if (outputs.Any())
+				{
+					sb.AppendLine("OUTPUT");
+					sb.AppendLine(Join(outputs, ",", "Inserted.{0}"));
+				}
 				sb.AppendLine(";");
 			}
 			else
