@@ -44,10 +44,15 @@ namespace Insight.Database.Schema
 
             SqlConnectionStringBuilder builder = new SqlConnectionStringBuilder (connectionString);
             builder.Pooling = false;
-			// always use master
-			builder.InitialCatalog = "master";
-            _connectionString = builder.ConnectionString;
+
+			// save the connection string
+			builder.InitialCatalog = databaseName;
+			_connectionString = builder.ConnectionString;
             _databaseName = databaseName;
+
+			// save the master connection string
+			builder.InitialCatalog = "master";
+			_masterConnectionString = builder.ConnectionString;
         }
         #endregion
 
@@ -59,7 +64,7 @@ namespace Insight.Database.Schema
         /// <exception cref="SqlException">If the database name is invalid</exception>
 		public bool CreateDatabase ()
         {
-            using (_connection = new SqlConnection (_connectionString))
+			using (_connection = new SqlConnection(_masterConnectionString))
             {
                 _connection.Open ();
 
@@ -81,16 +86,13 @@ namespace Insight.Database.Schema
         /// <exception cref="SqlException">If the database name is invalid or cannot be dropped</exception>
         public bool DropDatabase ()
         {
-            using (_connection = new SqlConnection (_connectionString))
+			using (_connection = new SqlConnection(_masterConnectionString))
             {
                 _connection.Open ();
 
                 // if database does not exist, then don't delete it
                 if (!DatabaseExists())
                     return false;
-
-                // switch to the master database to get away from an open connection
-                _connection.ChangeDatabase ("master");
 
                 // set the database to single user mode, effectively dropping all connections except the current
                 // connection.
@@ -727,94 +729,80 @@ namespace Insight.Database.Schema
         /// <remarks>Drops the dependencies and adds SchemaObjects to readd the dependencies later</remarks>
 		private void DropTableDepencencies(string tableName, List<SchemaObject> addObjects, TableScriptOptions options, bool modifyingTable)
         {
-            try
+            Table table = _database.Tables[SchemaObject.UnformatSqlName (tableName)];
+            if (table == null)
+                return;
+
+            DependencyTree tree = _scripter.DiscoverDependencies (new SqlSmoObject[] { table }, DependencyType.Children);
+
+            // find all of the tables that refer to this table and drop all of the foreign keys
+            for (DependencyTreeNode dependent = tree.FirstChild.FirstChild; dependent != null; dependent = dependent.NextSibling)
             {
-                Table table = _database.Tables[SchemaObject.UnformatSqlName (tableName)];
-                if (table == null)
-                    return;
+				if (dependent.Urn.Type == "Table")
+				{
+					// script the re-add of foreign keys, but not the tables themselves
+					_scripter.Options = new ScriptingOptions (ScriptOption.DriForeignKeys) - ScriptOption.PrimaryObject;
 
-                DependencyTree tree = _scripter.DiscoverDependencies (new SqlSmoObject[] { table }, DependencyType.Children);
+					// don't script anonymous constraints.
+					// if they are on the table, they will get created with the new table
+					// if they are not on the table, they should go away
+					options &= ~TableScriptOptions.ScriptAnonymousConstraints;
 
-                // find all of the tables that refer to this table and drop all of the foreign keys
-                for (DependencyTreeNode dependent = tree.FirstChild.FirstChild; dependent != null; dependent = dependent.NextSibling)
-                {
-					if (dependent.Urn.Type == "Table")
-					{
-						// script the re-add of foreign keys, but not the tables themselves
-						_scripter.Options = new ScriptingOptions (ScriptOption.DriForeignKeys) - ScriptOption.PrimaryObject;
-
-						// don't script anonymous constraints.
-						// if they are on the table, they will get created with the new table
-						// if they are not on the table, they should go away
-						options &= ~TableScriptOptions.ScriptAnonymousConstraints;
-
-						DropAndReAdd (dependent.Urn, addObjects, options);
-					}
-					else
-					if (modifyingTable && dependent.Urn.Type == "View")
-					{
-						DropViewDependencies (dependent.Urn, addObjects);
-						DropAndReAdd (dependent.Urn, addObjects, options);
-					}
-                }
-
-                // handle xml indexes separately
-                if ((options & TableScriptOptions.AllXmlIndexes) != 0)
-                {
-                    // drop all of the permissions, constraints, etc. on this table, but not the table itself
-                    _scripter.Options = new ScriptingOptions ();
-                    _scripter.Options.XmlIndexes = true;
-                    _scripter.Options -= ScriptOption.PrimaryObject;
-
-                    TableScriptOptions xmlOptions = options;
-                    if ((options & TableScriptOptions.PrimaryXmlIndexes) != 0)
-                        xmlOptions &= ~TableScriptOptions.AddAtEnd;
-                    DropAndReAdd (tree.FirstChild.Urn, addObjects, xmlOptions);
-                }
-
-                // drop the objects on the table itself
-                if ((options & TableScriptOptions.IncludeTableModifiers) != 0)
-                {
-                    options &= ~TableScriptOptions.ScriptAnonymousConstraints;
-
-                    // drop all of the permissions, constraints, etc. on this table, but not the table itself
-                    _scripter.Options = new ScriptingOptions ();
-                    _scripter.Options.DriAll = true;
-					_scripter.Options.NonClusteredIndexes = true;
-					_scripter.Options.ClusteredIndexes = true;
-                    _scripter.Options -= ScriptOption.PrimaryObject;
-                    DropAndReAdd (tree.FirstChild.Urn, addObjects, options);
-
-                    // script the permissions on the table
-                    ScriptPermissions (tree.FirstChild.Urn, addObjects);
-
-                    _scripter.Options = new ScriptingOptions (ScriptOption.Triggers);
-                    DropAndReAdd (tree.FirstChild.Urn, addObjects, options);
-                }
+					DropAndReAdd (dependent.Urn, addObjects, options);
+				}
+				else
+				if (modifyingTable && dependent.Urn.Type == "View")
+				{
+					DropViewDependencies (dependent.Urn, addObjects);
+					DropAndReAdd (dependent.Urn, addObjects, options);
+				}
             }
-            finally
+
+            // handle xml indexes separately
+            if ((options & TableScriptOptions.AllXmlIndexes) != 0)
             {
-                _connection.ChangeDatabase (_databaseName);
+                // drop all of the permissions, constraints, etc. on this table, but not the table itself
+                _scripter.Options = new ScriptingOptions ();
+                _scripter.Options.XmlIndexes = true;
+                _scripter.Options -= ScriptOption.PrimaryObject;
+
+                TableScriptOptions xmlOptions = options;
+                if ((options & TableScriptOptions.PrimaryXmlIndexes) != 0)
+                    xmlOptions &= ~TableScriptOptions.AddAtEnd;
+                DropAndReAdd (tree.FirstChild.Urn, addObjects, xmlOptions);
+            }
+
+            // drop the objects on the table itself
+            if ((options & TableScriptOptions.IncludeTableModifiers) != 0)
+            {
+                options &= ~TableScriptOptions.ScriptAnonymousConstraints;
+
+                // drop all of the permissions, constraints, etc. on this table, but not the table itself
+                _scripter.Options = new ScriptingOptions ();
+                _scripter.Options.DriAll = true;
+				_scripter.Options.NonClusteredIndexes = true;
+				_scripter.Options.ClusteredIndexes = true;
+                _scripter.Options -= ScriptOption.PrimaryObject;
+                DropAndReAdd (tree.FirstChild.Urn, addObjects, options);
+
+                // script the permissions on the table
+                ScriptPermissions (tree.FirstChild.Urn, addObjects);
+
+                _scripter.Options = new ScriptingOptions (ScriptOption.Triggers);
+                DropAndReAdd (tree.FirstChild.Urn, addObjects, options);
             }
         }
 
 		private void DropViewDependencies (Urn urn, List<SchemaObject> addObjects)
 		{
-			try
+			DependencyTree tree = _scripter.DiscoverDependencies (new Urn [] { urn }, DependencyType.Children);
+			for (DependencyTreeNode dependent = tree.FirstChild.FirstChild; dependent != null; dependent = dependent.NextSibling)
 			{
-				DependencyTree tree = _scripter.DiscoverDependencies (new Urn [] { urn }, DependencyType.Children);
-				for (DependencyTreeNode dependent = tree.FirstChild.FirstChild; dependent != null; dependent = dependent.NextSibling)
-				{
-					// for each child object, script it and its permissions
-					_scripter.Options = new ScriptingOptions ();
-					_scripter.Options.DriAll = true;
-					_scripter.Options.Permissions = true;
-					DropAndReAdd (dependent.Urn, addObjects, TableScriptOptions.AddAtEnd);
-				}
-			}
-			finally
-			{
-				_connection.ChangeDatabase (_databaseName);
+				// for each child object, script it and its permissions
+				_scripter.Options = new ScriptingOptions ();
+				_scripter.Options.DriAll = true;
+				_scripter.Options.Permissions = true;
+				DropAndReAdd (dependent.Urn, addObjects, TableScriptOptions.AddAtEnd);
 			}
 		}
 
@@ -838,21 +826,14 @@ namespace Insight.Database.Schema
 
 		private void DropTypeDependencies (Urn urn, List<SchemaObject> addObjects)
 		{
-			try
+			DependencyTree tree = _scripter.DiscoverDependencies(new Urn[] { urn }, DependencyType.Children);
+			for (DependencyTreeNode dependent = tree.FirstChild.FirstChild; dependent != null; dependent = dependent.NextSibling)
 			{
-				DependencyTree tree = _scripter.DiscoverDependencies(new Urn[] { urn }, DependencyType.Children);
-				for (DependencyTreeNode dependent = tree.FirstChild.FirstChild; dependent != null; dependent = dependent.NextSibling)
-				{
-					// for each child object, script it and its permissions
-					_scripter.Options = new ScriptingOptions();
-					_scripter.Options.DriAll = true;
-					_scripter.Options.Permissions = true;
-					DropAndReAdd(dependent.Urn, addObjects, TableScriptOptions.AddAtEnd);
-				}
-			}
-			finally
-			{
-				_connection.ChangeDatabase(_databaseName);
+				// for each child object, script it and its permissions
+				_scripter.Options = new ScriptingOptions();
+				_scripter.Options.DriAll = true;
+				_scripter.Options.Permissions = true;
+				DropAndReAdd(dependent.Urn, addObjects, TableScriptOptions.AddAtEnd);
 			}
 		}
 
@@ -878,9 +859,6 @@ namespace Insight.Database.Schema
 
             if (addScript.Length > 0)
                 addObjects.Add (new SchemaObject (SchemaObjectType.Permission, "Scripted Permissions", addScript));
-
-            // smo switches to master, so switch back to our db
-            _connection.ChangeDatabase (_databaseName);
         }
 
         /// <summary>
@@ -940,9 +918,6 @@ namespace Insight.Database.Schema
             Table table = smo as Table;
             if (table != null)
                 dropScript = _dropTableRegex.Replace (dropScript, "SELECT 1");
-
-            // smo switches to master, so switch back to our db
-            _connection.ChangeDatabase (_databaseName);
 
 			if (!String.IsNullOrWhiteSpace(dropScript))
 	            ExecuteNonQuery (dropScript);
@@ -1029,7 +1004,6 @@ namespace Insight.Database.Schema
 
 			ResetScripter ();
 
-            _connection.ChangeDatabase (_databaseName);
             return _connection;
         }
 
@@ -1041,7 +1015,7 @@ namespace Insight.Database.Schema
             // prepare the SMO objects
             ServerConnection connection = new ServerConnection (_connection);
             Server server = new Server (connection);
-            _database = server.Databases[_databaseName];
+            _database = server.Databases.OfType<Microsoft.SqlServer.Management.Smo.Database>().FirstOrDefault(d => String.CompareOrdinal(d.Name, _databaseName) == 0);
             _scripter = new Scripter (server);
 		}
 
@@ -1106,7 +1080,12 @@ namespace Insight.Database.Schema
         /// </summary>
         private string _connectionString;
 
-        /// <summary>
+		/// <summary>
+		/// The connection string to the master database (for create/drop)
+		/// </summary>
+		private string _masterConnectionString;
+
+		/// <summary>
         /// The name of the database to edit
         /// </summary>
         private string _databaseName;
