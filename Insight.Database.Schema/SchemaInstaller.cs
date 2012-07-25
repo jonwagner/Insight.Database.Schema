@@ -791,7 +791,16 @@ namespace Insight.Database.Schema
                 _scripter.Options = new ScriptingOptions (ScriptOption.Triggers);
                 DropAndReAdd (tree.FirstChild.Urn, addObjects, options);
             }
+
+			ResetConnectionToCorrectDatabase();
         }
+
+		private void ResetConnectionToCorrectDatabase()
+		{
+			// SMO changes databases, so switch back here
+			if (_connection.Database != _databaseName)
+				_connection.ChangeDatabase(_databaseName);
+		}
 
 		private void DropViewDependencies (Urn urn, List<SchemaObject> addObjects)
 		{
@@ -804,6 +813,8 @@ namespace Insight.Database.Schema
 				_scripter.Options.Permissions = true;
 				DropAndReAdd (dependent.Urn, addObjects, TableScriptOptions.AddAtEnd);
 			}
+
+			ResetConnectionToCorrectDatabase();
 		}
 
 		private void DropViewDependencies (string viewName, List<SchemaObject> addObjects)
@@ -859,7 +870,9 @@ namespace Insight.Database.Schema
 
             if (addScript.Length > 0)
                 addObjects.Add (new SchemaObject (SchemaObjectType.Permission, "Scripted Permissions", addScript));
-        }
+
+			ResetConnectionToCorrectDatabase();
+		}
 
         /// <summary>
         /// Drop an object and generate the script to re-add it
@@ -918,6 +931,9 @@ namespace Insight.Database.Schema
             Table table = smo as Table;
             if (table != null)
                 dropScript = _dropTableRegex.Replace (dropScript, "SELECT 1");
+
+
+			ResetConnectionToCorrectDatabase();
 
 			if (!String.IsNullOrWhiteSpace(dropScript))
 	            ExecuteNonQuery (dropScript);
