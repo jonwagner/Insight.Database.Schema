@@ -1,5 +1,7 @@
 # Insight.Database.Schema #
 
+NOTE: v2.0 is a total rewrite without SQL-SMO dependencies. It's smarter, faster, and works with SQL Azure. The master branch has the v2.0 code, but it's not yet ready to ship (i.e. needs some real testing first). If you want the old code, you can get the 1.1 branch.
+
 **Insight.Database.Schema** is a dead-simple easy to use SQL Server database script installer and "code migrator".
 
 # Why You Want This #
