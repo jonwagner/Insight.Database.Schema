@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Data.SqlClient;
 using System.Text;
 
@@ -32,8 +33,8 @@ namespace Insight.Database.Schema
         /// The SchemaInstaller connection to the database
         /// </summary>
         /// <value>The name of the table containing the pre-converted data</value>
-        public SqlConnection Connection { get { return _connection; } }
-        private SqlConnection _connection;
+		public IDbConnection Connection { get { return _connection; } }
+		private IDbConnection _connection;
 
         /// <summary>
         /// Tells the SchemaInstaller if the table data has been converted
@@ -46,7 +47,7 @@ namespace Insight.Database.Schema
         }
         private bool _converted;
 
-        internal ConvertTableEventArgs (SchemaEventType eventType, SchemaObject table, SqlConnection connection, string beforeTable, string afterTable) :
+		internal ConvertTableEventArgs(SchemaEventType eventType, SchemaObject table, IDbConnection connection, string beforeTable, string afterTable) :
             base (eventType, table)
         {
             _connection = connection;

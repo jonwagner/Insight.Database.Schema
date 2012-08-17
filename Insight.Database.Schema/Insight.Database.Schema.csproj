@@ -10,8 +10,11 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>Insight.Database.Schema</RootNamespace>
     <AssemblyName>Insight.Database.Schema</AssemblyName>
-    <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
+    <TargetFrameworkProfile />
+    <SolutionDir Condition="$(SolutionDir) == '' Or $(SolutionDir) == '*Undefined*'">..\</SolutionDir>
+    <RestorePackages>true</RestorePackages>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -21,6 +24,7 @@
     <DefineConstants>TRACE;DEBUG</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+    <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
@@ -29,11 +33,12 @@
     <DefineConstants>TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+    <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="Microsoft.SqlServer.ConnectionInfo, Version=10.0.0.0, Culture=neutral, PublicKeyToken=89845dcd8080cc91, processorArchitecture=MSIL" />
-    <Reference Include="Microsoft.SqlServer.Management.Sdk.Sfc, Version=10.0.0.0, Culture=neutral, PublicKeyToken=89845dcd8080cc91, processorArchitecture=MSIL" />
-    <Reference Include="Microsoft.SqlServer.Smo, Version=10.0.0.0, Culture=neutral, PublicKeyToken=89845dcd8080cc91, processorArchitecture=MSIL" />
+    <Reference Include="Insight.Database">
+      <HintPath>..\packages\Insight.Database.1.2.8\lib\NET40\Insight.Database.dll</HintPath>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="Microsoft.CSharp" />
@@ -45,11 +50,16 @@
     <Compile Include="AutoProc.cs" />
     <Compile Include="ColumnDefinition.cs" />
     <Compile Include="ConvertTableEventArgs.cs" />
+    <Compile Include="SchemaException.cs" />
     <Compile Include="IColumnDefinitionProvider.cs" />
-    <Compile Include="IDbInstallConnection.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Properties\Resources.Designer.cs" />
-    <Compile Include="Properties\Settings.Designer.cs" />
+    <Compile Include="RecordingDbCommand.cs">
+      <SubType>Component</SubType>
+    </Compile>
+    <Compile Include="RecordingDbConnection.cs">
+      <SubType>Component</SubType>
+    </Compile>
     <Compile Include="SchemaEventArgs.cs" />
     <Compile Include="SchemaEventConsoleLogger.cs" />
     <Compile Include="SchemaEventLogger.cs" />
@@ -58,8 +68,10 @@
     <Compile Include="SchemaObject.cs" />
     <Compile Include="SchemaObjectCollection.cs" />
     <Compile Include="SchemaObjectType.cs" />
+    <Compile Include="SqlParser.cs" />
     <Compile Include="SchemaParsingException.cs" />
     <Compile Include="SchemaRegistry.cs" />
+    <Compile Include="SchemaRegistryEntry.cs" />
     <Compile Include="Singularizer.cs" />
     <Compile Include="SqlColumnDefinitionProvider.cs" />
   </ItemGroup>
@@ -74,7 +86,6 @@
       <SubType>Designer</SubType>
     </None>
     <None Include="packages.config" />
-    <None Include="Properties\Settings.settings" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
@@ -82,6 +93,7 @@
     </PostBuildEvent>
   </PropertyGroup>
   <Import Project="..\packages\BuildTools.FxCop.1.0.17.47\tools\FxCop.targets" />
+  <Import Project="$(SolutionDir)\.nuget\nuget.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.
   <Target Name="BeforeBuild">

@@ -8,6 +8,9 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Reflection;
 using System.Collections.ObjectModel;
+using System.Globalization;
+using System.Data.SqlClient;
+using System.Data.Common;
 
 #endregion
 
@@ -31,11 +34,14 @@ namespace Insight.Database.Schema
         /// Load a schema from a file
         /// </summary>
         /// <param name="fileName">The name of the file to load</param>
+		/// <param name="stripPrintStatements">True to automatically strip print statements from scripts as they are loaded.</param>
         /// <exception cref="FileNotFoundException">If the file canont be found</exception>
         /// <exception cref="ArgumentNullException">If fileName is null</exception>
         /// <exception cref="SchemaParsingException">If the schema file cannot be parsed</exception>
-        public SchemaObjectCollection (string fileName)
+        public SchemaObjectCollection (string fileName, bool stripPrintStatements = false)
         {
+			StripPrintStatements = stripPrintStatements;
+
             Load (fileName);
         }
 
@@ -43,8 +49,11 @@ namespace Insight.Database.Schema
 		/// Load a schema from a stream
 		/// </summary>
 		/// <param name="stream">The stream to load from</param>
-		public SchemaObjectCollection(Stream stream)
+		/// <param name="stripPrintStatements">True to automatically strip print statements from scripts as they are loaded.</param>
+		public SchemaObjectCollection(Stream stream, bool stripPrintStatements = false)
 		{
+			StripPrintStatements = stripPrintStatements;
+
 			Load(stream);
 		}
 
@@ -52,9 +61,12 @@ namespace Insight.Database.Schema
 		/// Load the schema from the assembly
 		/// </summary>
 		/// <param name="assembly"></param>
-		public SchemaObjectCollection (Assembly assembly)
+		/// <param name="stripPrintStatements">True to automatically strip print statements from scripts as they are loaded.</param>
+		public SchemaObjectCollection(Assembly assembly, bool stripPrintStatements = false)
 		{
-			Load (assembly);
+			StripPrintStatements = stripPrintStatements;
+
+			Load(assembly);
 		}
         #endregion
 
@@ -175,6 +187,44 @@ namespace Insight.Database.Schema
         }
         #endregion
 
+		/// <summary>
+		/// Validate that the schema is a valid schema. This checks names and duplicate objects.
+		/// </summary>
+		public void Validate()
+		{
+			// check for duplicate objects and invalid names
+			foreach (SchemaObject schemaObject in this)
+			{
+				// validate the name
+				SqlParser.AssertValidSqlName(schemaObject.Name);
+
+				// if there are any duplicates, throw an exception
+				if (this.Count(o => o.Name == schemaObject.Name) > 1)
+					throw new ArgumentException(String.Format(CultureInfo.InvariantCulture, Properties.Resources.DuplicateObjectName, schemaObject.Name));
+			}
+		}
+
+		/// <summary>
+		/// Verify that all of the objects are in the database.
+		/// </summary>
+		/// <param name="connection">The connection to use for testing.</param>
+		public void Verify(DbConnection connection)
+		{
+			using (RecordingDbConnection recordingConnection = new RecordingDbConnection(connection))
+			{
+				foreach (SchemaObject schemaObject in this)
+				{
+					if (!schemaObject.Verify(recordingConnection))
+					{
+						throw new SchemaException(String.Format(CultureInfo.InvariantCulture, "SchemaObject {0} was not in the database", schemaObject.Name));
+					}
+				}
+			}
+		}
+
+		/// <summary>
+		/// The Regex used to detect GO commands. GO must be on its own line.
+		/// </summary>
         private static readonly Regex _goCommandExpression = new Regex (@"^\s*GO\s*$", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
     }
     #endregion

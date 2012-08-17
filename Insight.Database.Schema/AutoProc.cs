@@ -60,7 +60,7 @@ namespace Insight.Database.Schema
 		/// <summary>
 		/// The RegEx used to detect and decode an AutoProc.
 		/// </summary>
-		internal static readonly string AutoProcRegex = String.Format(CultureInfo.InvariantCulture, @"AUTOPROC\s+(?<type>\w+)\s+(?<tablename>{0})(\s+Name=(?<name>[^\s]+))?(\s+Single=(?<single>[^\s]+))?(\s+Plural=(?<plural>[^\s]+))?(\s+ExecuteAsOwner=(?<execasowner>[^\s]+))?", SchemaObject.SqlNameExpression);
+		internal static readonly string AutoProcRegex = String.Format(CultureInfo.InvariantCulture, @"AUTOPROC\s+(?<type>\w+)\s+(?<tablename>{0})(\s+Name=(?<name>[^\s]+))?(\s+Single=(?<single>[^\s]+))?(\s+Plural=(?<plural>[^\s]+))?(\s+ExecuteAsOwner=(?<execasowner>[^\s]+))?", SqlParser.SqlNameExpression);
 
 		/// <summary>
 		/// The signature of the AutoProc. This is derived from the table and the private key(s) in the script collection.
@@ -93,28 +93,28 @@ namespace Insight.Database.Schema
 			// break up the name into its components
 			var match = new Regex(AutoProcRegex, RegexOptions.IgnoreCase).Match(name);
 			_type = (ProcTypes)Enum.Parse(typeof(ProcTypes), match.Groups["type"].Value);
-			_tableName = SchemaObject.FormatSqlName(match.Groups["tablename"].Value);
+			_tableName = SqlParser.FormatSqlName(match.Groups["tablename"].Value);
 
 			// generate the singular table name
 			if (!String.IsNullOrWhiteSpace(match.Groups["single"].Value))
-				_singularTableName = SchemaObject.FormatSqlName(match.Groups["single"].Value);
+				_singularTableName = SqlParser.FormatSqlName(match.Groups["single"].Value);
 			else
-				_singularTableName = SchemaObject.FormatSqlName(Singularizer.Singularize(SchemaObject.UnformatSqlName(match.Groups["tablename"].Value)));
+				_singularTableName = SqlParser.FormatSqlName(Singularizer.Singularize(SqlParser.UnformatSqlName(match.Groups["tablename"].Value)));
 
 			// generate the plural table name
 			if (!String.IsNullOrWhiteSpace(match.Groups["plural"].Value))
-				_pluralTableName = SchemaObject.FormatSqlName(match.Groups["plural"].Value);
+				_pluralTableName = SqlParser.FormatSqlName(match.Groups["plural"].Value);
 			else
 			{
 				_pluralTableName = _tableName;
 				if (String.Compare(_pluralTableName, _singularTableName, StringComparison.OrdinalIgnoreCase) == 0)
-					_pluralTableName = SchemaObject.FormatSqlName(SchemaObject.UnformatSqlName(_tableName) + "s");
+					_pluralTableName = SqlParser.FormatSqlName(SqlParser.UnformatSqlName(_tableName) + "s");
 			}
 
 			// get the specified name
 			string procName = match.Groups["name"].Value;
 			if (!String.IsNullOrWhiteSpace(procName))
-				Name = SchemaObject.FormatSqlName(procName);
+				Name = SqlParser.FormatSqlName(procName);
 
 			//  check the exec as owner flag
 			if (!String.IsNullOrWhiteSpace(match.Groups["execasowner"].Value))
@@ -175,6 +175,26 @@ namespace Insight.Database.Schema
 			return sql;
 		}
 		private string _batchDivider = Environment.NewLine + "GO" + Environment.NewLine;
+
+		public IEnumerable<Tuple<ProcTypes, string>> GetProcs()
+		{
+			if (_type.HasFlag(ProcTypes.Table)) yield return new Tuple<ProcTypes, string>(ProcTypes.Table, MakeTableName("Table"));
+			if (_type.HasFlag(ProcTypes.IdTable)) yield return new Tuple<ProcTypes, string>(ProcTypes.IdTable, MakeTableName("IdTable"));
+
+			if (_type.HasFlag(ProcTypes.Select)) yield return new Tuple<ProcTypes, string>(ProcTypes.Select, MakeProcName(ProcTypes.Select.ToString(), false));
+			if (_type.HasFlag(ProcTypes.Insert)) yield return new Tuple<ProcTypes, string>(ProcTypes.Insert, MakeProcName(ProcTypes.Insert.ToString(), false));
+			if (_type.HasFlag(ProcTypes.Update)) yield return new Tuple<ProcTypes, string>(ProcTypes.Update, MakeProcName(ProcTypes.Update.ToString(), false));
+			if (_type.HasFlag(ProcTypes.Upsert)) yield return new Tuple<ProcTypes, string>(ProcTypes.Upsert, MakeProcName(ProcTypes.Upsert.ToString(), false));
+			if (_type.HasFlag(ProcTypes.Delete)) yield return new Tuple<ProcTypes, string>(ProcTypes.Delete, MakeProcName(ProcTypes.Delete.ToString(), false));
+
+			if (_type.HasFlag(ProcTypes.SelectMany)) yield return new Tuple<ProcTypes, string>(ProcTypes.SelectMany, MakeProcName(ProcTypes.Select.ToString(), true));
+			if (_type.HasFlag(ProcTypes.InsertMany)) yield return new Tuple<ProcTypes, string>(ProcTypes.InsertMany, MakeProcName(ProcTypes.Insert.ToString(), true));
+			if (_type.HasFlag(ProcTypes.UpdateMany)) yield return new Tuple<ProcTypes, string>(ProcTypes.UpdateMany, MakeProcName(ProcTypes.Update.ToString(), true));
+			if (_type.HasFlag(ProcTypes.UpsertMany)) yield return new Tuple<ProcTypes, string>(ProcTypes.UpsertMany, MakeProcName(ProcTypes.Upsert.ToString(), true));
+			if (_type.HasFlag(ProcTypes.DeleteMany)) yield return new Tuple<ProcTypes, string>(ProcTypes.DeleteMany, MakeProcName(ProcTypes.Delete.ToString(), true));
+
+			if (_type.HasFlag(ProcTypes.Find)) yield return new Tuple<ProcTypes, string>(ProcTypes.Find, MakeProcName(ProcTypes.Find.ToString(), true));
+		}
 		#endregion
 
 		#region Standard CRUD Sql
@@ -418,7 +438,7 @@ namespace Insight.Database.Schema
 		{
 			IEnumerable<ColumnDefinition> keys = columns.Where(c => c.IsKey);
 
-			string parameterName = SchemaObject.UnformatSqlName(_singularTableName);
+			string parameterName = SqlParser.UnformatSqlName(_singularTableName);
 
 			// generate the sql for each proc and install them
 			StringBuilder sb = new StringBuilder();
@@ -446,7 +466,7 @@ namespace Insight.Database.Schema
 			IEnumerable<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly);
 			IEnumerable<ColumnDefinition> insertable = columns.Where(c => !c.IsReadOnly);
 
-			string parameterName = SchemaObject.UnformatSqlName(_singularTableName);
+			string parameterName = SqlParser.UnformatSqlName(_singularTableName);
 
 			// generate the sql for each proc and install them
 			StringBuilder sb = new StringBuilder();
@@ -484,7 +504,7 @@ namespace Insight.Database.Schema
 			IEnumerable<ColumnDefinition> keys = columns.Where(c => c.IsKey);
 			IEnumerable<ColumnDefinition> updatable = columns.Where(c => !c.IsReadOnly);
 
-			string parameterName = SchemaObject.UnformatSqlName(_singularTableName);
+			string parameterName = SqlParser.UnformatSqlName(_singularTableName);
 
 			// generate the sql for each proc and install them
 			StringBuilder sb = new StringBuilder();
@@ -517,7 +537,7 @@ namespace Insight.Database.Schema
 			IEnumerable<ColumnDefinition> insertable = columns.Where(c => !c.IsReadOnly);
 			IEnumerable<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly);
 
-			string parameterName = SchemaObject.UnformatSqlName(_singularTableName);
+			string parameterName = SqlParser.UnformatSqlName(_singularTableName);
 
 			// generate the sql for each proc and install them
 			StringBuilder sb = new StringBuilder();
@@ -567,7 +587,7 @@ namespace Insight.Database.Schema
 		{
 			IEnumerable<ColumnDefinition> keys = columns.Where(c => c.IsKey);
 
-			string parameterName = SchemaObject.UnformatSqlName(_singularTableName);
+			string parameterName = SqlParser.UnformatSqlName(_singularTableName);
 
 			// generate the sql for each proc and install them
 			StringBuilder sb = new StringBuilder();
@@ -596,7 +616,7 @@ namespace Insight.Database.Schema
 		/// <returns>The stored procedure SQL.</returns>
 		private string GenerateFindSql(IList<ColumnDefinition> columns)
 		{
-			string parameterName = SchemaObject.UnformatSqlName(_singularTableName);
+			string parameterName = SqlParser.UnformatSqlName(_singularTableName);
 
 			// generate the sql for each proc and install them
 			StringBuilder sb = new StringBuilder();
@@ -652,7 +672,7 @@ namespace Insight.Database.Schema
 		private string MakeProcName(string type, bool plural)
 		{
 			// use the user-specified name or make one from the type
-			return SchemaObject.FormatSqlName(String.Format (CultureInfo.InvariantCulture, Name ?? (plural ? "{0}{1}" : "{0}{2}"), 
+			return SqlParser.FormatSqlName(String.Format (CultureInfo.InvariantCulture, Name ?? (plural ? "{0}{1}" : "{0}{2}"), 
 				type,
 				_pluralTableName,
 				_singularTableName));
@@ -666,7 +686,7 @@ namespace Insight.Database.Schema
 		private string MakeTableName(string type)
 		{
 			// use the user-specified name or make one from the type
-			return SchemaObject.FormatSqlName(String.Format(CultureInfo.InvariantCulture, Name ?? "{2}{0}",
+			return SqlParser.FormatSqlName(String.Format(CultureInfo.InvariantCulture, Name ?? "{2}{0}",
 				type,
 				_tableName,
 				_singularTableName));
@@ -690,7 +710,7 @@ namespace Insight.Database.Schema
 		/// <returns>The Drop statement.</returns>
 		private string MakeTableDropStatment(string tableName)
 		{
-			return String.Format(CultureInfo.InvariantCulture, "IF EXISTS (SELECT * FROM sys.types st JOIN sys.schemas ss ON st.schema_id = ss.schema_id WHERE st.name = N'{1}') DROP TYPE {0}", MakeTableName(tableName), SchemaObject.UnformatSqlName(MakeTableName(tableName)));
+			return String.Format(CultureInfo.InvariantCulture, "IF EXISTS (SELECT * FROM sys.types st JOIN sys.schemas ss ON st.schema_id = ss.schema_id WHERE st.name = N'{1}') DROP TYPE {0}", MakeTableName(tableName), SqlParser.UnformatSqlName(MakeTableName(tableName)));
 		}
 		#endregion
 
@@ -742,7 +762,7 @@ namespace Insight.Database.Schema
 		/// The types of stored procedures that we support.
 		/// </summary>
 		[Flags]
-		enum ProcTypes
+		internal enum ProcTypes
 		{
 			Table = 1 << 0,
 			IdTable = 1 << 1,

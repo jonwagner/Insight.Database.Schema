@@ -15,49 +15,50 @@ namespace Insight.Database.Schema
     /// Represents errors in parsing a SQL script
     /// </summary>
 	[Serializable]
-	public class SchemaParsingException : Exception
+	public class SchemaException : Exception
     {
         /// <summary>
-        /// Construct a SchemaParsingException
+        /// Construct a SchemaException
         /// </summary>
-        public SchemaParsingException ()
+        public SchemaException ()
         {
         }
 
         /// <summary>
-        /// Construct a SchemaParsingException with a message
+        /// Construct a SchemaException with a message
         /// </summary>
         /// <param name="message">The exception error message</param>
-        public SchemaParsingException (string message) : base (message)
+        public SchemaException (string message) : base (message)
         {
         }
 
         /// <summary>
-        /// Construct a SchemaParsingException with a message
+        /// Construct a SchemaException with a message
         /// </summary>
         /// <param name="message">The exception error message</param>
         /// <param name="innerException">The base exception</param>
-        public SchemaParsingException (string message, Exception innerException) : base (message, innerException)
+        public SchemaException (string message, Exception innerException) : base (message, innerException)
         {
         }
 
         /// <summary>
-        /// Construct a SchemaParsingException with a message and the error sql
+        /// Construct a SchemaException with a message and the error sql
         /// </summary>
         /// <param name="message">The exception error message</param>
         /// <param name="sql">The sql script that could not be parsed</param>
-		public SchemaParsingException(string message, string sql)
+		public SchemaException(string message, string sql)
 			: base(String.Format(CultureInfo.InvariantCulture, message, sql))
         {
             _sql = sql;
         }
 
         /// <summary>
-        /// Construct a SchemaParsingException with a message and the error sql
+		/// Construct a SchemaException with a message and the error sql
         /// </summary>
         /// <param name="info">Serialization information</param>
         /// <param name="context">Serialization context</param>
-        protected SchemaParsingException (SerializationInfo info, StreamingContext context) : base (info, context)
+		protected SchemaException(SerializationInfo info, StreamingContext context)
+			: base(info, context)
         {
         }
 

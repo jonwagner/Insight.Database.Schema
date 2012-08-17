@@ -12,26 +12,30 @@ namespace Insight.Database.Schema.Sample
 	{
 		static void Main(string[] args)
 		{
-			SqlConnectionStringBuilder connection = new SqlConnectionStringBuilder("Database=.;Initial Catalog=InsightTest;Integrated Security=true");
-
-			// make sure our database exists
-			SchemaInstaller installer = new SchemaInstaller(connection.ConnectionString, connection.InitialCatalog);
-			new SchemaEventConsoleLogger().Attach(installer);
-			installer.CreateDatabase();
-
-			// load the schema from the embedded resources in this project
-			SchemaObjectCollection schema = new SchemaObjectCollection();
-			schema.Load(Assembly.GetExecutingAssembly());
-
-			// install the schema
-			Console.WriteLine("Installing");
-			installer.Install("BeerGarten", schema);
-
-			// uninstall the schema
-			if (args.Length > 0 && args[0].ToUpperInvariant() == "UNINSTALL")
+			SqlConnectionStringBuilder connectionString = new SqlConnectionStringBuilder("Database=.;Initial Catalog=InsightTest;Integrated Security=true");
+			using (SqlConnection connection = new SqlConnection(connectionString.ConnectionString))
 			{
-				Console.WriteLine("Uninstalling");
-				installer.Uninstall("BeerGarten");
+				connection.Open();
+
+				// make sure our database exists
+				SchemaInstaller installer = new SchemaInstaller(connection);
+				new SchemaEventConsoleLogger().Attach(installer);
+				SchemaInstaller.CreateDatabase(connection.ConnectionString);
+
+				// load the schema from the embedded resources in this project
+				SchemaObjectCollection schema = new SchemaObjectCollection();
+				schema.Load(Assembly.GetExecutingAssembly());
+
+				// install the schema
+				Console.WriteLine("Installing");
+				installer.Install("BeerGarten", schema);
+
+				// uninstall the schema
+				if (args.Length > 0 && args[0].ToUpperInvariant() == "UNINSTALL")
+				{
+					Console.WriteLine("Uninstalling");
+					installer.Uninstall("BeerGarten");
+				}
 			}
 		}
 	}

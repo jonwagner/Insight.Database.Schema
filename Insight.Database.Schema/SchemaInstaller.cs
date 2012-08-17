@@ -10,11 +10,8 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Transactions;
-
 using Insight.Database.Schema.Properties;
-using Microsoft.SqlServer.Management.Sdk.Sfc;
-using Microsoft.SqlServer.Management.Smo;
-using Microsoft.SqlServer.Management.Common;
+using System.Data.Common;
 #endregion
 
 namespace Insight.Database.Schema
@@ -23,501 +20,803 @@ namespace Insight.Database.Schema
     /// <summary>
     /// Installs, upgrades, and uninstalls objects from a database
     /// </summary>
-    public sealed class SchemaInstaller : IDisposable, IDbInstallConnection
+    public sealed class SchemaInstaller
     {
-        #region Constructors
-        /// <summary>
-        /// Create a SchemaInstaller that is connected to a given database
-        /// </summary>
-        /// <param name="connectionString">A connection string to the server. If the database does not exist, then a connection to the master database should be used.</param>
-        /// <param name="databaseName">The name of the database to edit</param>
-        /// <exception cref="ArgumentNullException">If connectionString is null</exception>
-        /// <exception cref="SqlException">If the database connection cannot be established</exception>
-        /// <exception cref="ArgumentException">If the database name contains invalid characters</exception>
-        /// <remarks>The database connection is held open for the lifetime of the SchemaInstaller.</remarks>
-        public SchemaInstaller (string connectionString, string databaseName)
-        {
-            // we need a connection string
-            if (connectionString == null) throw new ArgumentNullException ("connectionString");
-            if (databaseName == null) throw new ArgumentNullException ("databaseName");
-            AssertValidSqlName (databaseName);
+		#region Constructors
+		/// <summary>
+		/// Initialize the SchemaInstaller to work with a given SqlConnection.
+		/// </summary>
+		/// <param name="connection">The SqlConnection to work with.</param>
+		public SchemaInstaller(DbConnection connection)
+		{
+			if (connection == null)
+				throw new ArgumentNullException("connection");
 
-            SqlConnectionStringBuilder builder = new SqlConnectionStringBuilder (connectionString);
-            builder.Pooling = false;
+			// require the connection to be open
+			if (connection.State != ConnectionState.Open)
+				throw new ArgumentException("connection must be in an Open state.", "connection");
 
-			// save the connection string
-			builder.InitialCatalog = databaseName;
-			_connectionString = builder.ConnectionString;
-            _databaseName = databaseName;
-
-			// save the master connection string
-			builder.InitialCatalog = "master";
-			_masterConnectionString = builder.ConnectionString;
-        }
-        #endregion
+			// save the connection - make sure we are recording one way or another
+			_connection = connection as RecordingDbConnection ?? new RecordingDbConnection (connection);
+		}
+		#endregion
 
         #region Database Utility Methods
+		/// <summary>
+		/// Check to see if the database exists
+		/// </summary>
+		/// <param name="connectionString">The connection string for the database to connect to.</param>
+		/// <returns>True if the database already exists</returns>
+		public static bool DatabaseExists(string connectionString)
+		{
+			if (connectionString == null)
+				throw new ArgumentNullException("connectionString");
+
+			SqlConnectionStringBuilder builder = new SqlConnectionStringBuilder(connectionString);
+			string databaseName = builder.InitialCatalog;
+
+			using (var connection = OpenMasterConnection(connectionString))
+			{
+				var command = new SqlCommand("SELECT COUNT (*) FROM master.sys.databases WHERE name = @DatabaseName", connection);
+				command.Parameters.AddWithValue("@DatabaseName", databaseName);
+
+				return ((int)command.ExecuteScalar()) > 0;
+			}
+		}
+
         /// <summary>
-        /// Create a database on the specified connection if it does not exist
+        /// Create a database on the specified connection if it does not exist.
         /// </summary>
-        /// <returns>True if the database was created, false if it already exists</returns>
-        /// <exception cref="SqlException">If the database name is invalid</exception>
-		public bool CreateDatabase ()
+        /// <returns>True if the database was created, false if it already exists.</returns>
+        /// <exception cref="SqlException">If the database name is invalid.</exception>
+		public static bool CreateDatabase (string connectionString)
         {
-			using (_connection = new SqlConnection(_masterConnectionString))
-            {
-                _connection.Open ();
+			if (connectionString == null)
+				throw new ArgumentNullException("connectionString");
 
-                // see if the database already exists
-                bool createDatabase = !DatabaseExists ();
+			// see if the database already exists
+			if (DatabaseExists(connectionString))
+				return false;
 
-                // only create the database if it doesn't exist
-                if (createDatabase)
-                    ExecuteNonQuery (String.Format (CultureInfo.InvariantCulture, "CREATE DATABASE [{0}]", _databaseName));
+			SqlConnectionStringBuilder builder = new SqlConnectionStringBuilder(connectionString);
+			string databaseName = builder.InitialCatalog;
 
-                return createDatabase;
+			using (var connection = OpenMasterConnection(connectionString))
+			{
+				var command = new SqlCommand(String.Format(CultureInfo.InvariantCulture, "CREATE DATABASE [{0}]", databaseName), connection);
+				command.ExecuteNonQuery();
             }
-        }
+
+			return true;
+		}
 
         /// <summary>
-        /// Drop a database if it exists
+        /// Drop a database if it exists.
         /// </summary>
-        /// <returns>True if the database was dropped, false if it did not exist</returns>
-        /// <exception cref="SqlException">If the database name is invalid or cannot be dropped</exception>
-        public bool DropDatabase ()
+        /// <returns>True if the database was dropped, false if it did not exist.</returns>
+        /// <exception cref="SqlException">If the database name is invalid or cannot be dropped.</exception>
+		public static bool DropDatabase(string connectionString)
         {
-			using (_connection = new SqlConnection(_masterConnectionString))
-            {
-                _connection.Open ();
+			if (connectionString == null)
+				throw new ArgumentNullException("connectionString");
 
-                // if database does not exist, then don't delete it
-                if (!DatabaseExists())
-                    return false;
+			// see if the database was already dropped
+			if (!DatabaseExists(connectionString))
+				return false;
 
+			SqlConnectionStringBuilder builder = new SqlConnectionStringBuilder(connectionString);
+			string databaseName = builder.InitialCatalog;
+
+			using (var connection = OpenMasterConnection(connectionString))
+			{
+				// attempt to set the database to single user mode
                 // set the database to single user mode, effectively dropping all connections except the current
                 // connection.
-                ExecuteNonQuery(String.Format(CultureInfo.InvariantCulture, "exec sp_dboption N'{0}', N'single', N'true'", _databaseName));
+				try
+				{
+					var command = new SqlCommand(String.Format(CultureInfo.InvariantCulture, "ALTER DATABASE [{0}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE", databaseName), connection);
+					command.ExecuteNonQuery();
+				}
+				catch (SqlException)
+				{
+					// eat any exception here
+					// Azure will complain that this is a syntax error
+					// SQL - The database may already be in single user mode
+				}
 
-                // drop the database
-                ExecuteNonQuery (String.Format (CultureInfo.InvariantCulture, "DROP DATABASE [{0}]", _databaseName));
-                return true;
+				// attempt to drop the database
+				var dropCommand = new SqlCommand(String.Format(CultureInfo.InvariantCulture, "DROP DATABASE [{0}]", databaseName), connection);
+				dropCommand.ExecuteNonQuery();
             }
-        }
+
+			return true;
+		}
+
+		/// <summary>
+		/// Gets the connection string needed to connect to the master database.
+		/// This is used when creating/dropping databases.
+		/// </summary>
+		/// <param name="connectionString">The target connectionString.</param>
+		/// <returns>The connection string pointing at the master database.</returns>
+		private static string GetMasterConnectionString(string connectionString)
+		{
+			SqlConnectionStringBuilder builder = new SqlConnectionStringBuilder(connectionString);
+			builder.InitialCatalog = "master";
+			return builder.ConnectionString;
+		}
+
+		/// <summary>
+		/// Opens a connection needed to connect to the master database.
+		/// This is used when creating/dropping databases.
+		/// </summary>
+		/// <param name="connectionString">The target connectionString.</param>
+		/// <returns>The connection string pointing at the master database.</returns>
+		private static SqlConnection OpenMasterConnection(string connectionString)
+		{
+			var connection = new SqlConnection(GetMasterConnectionString(connectionString));
+			connection.Open();
+			return connection;
+		}
     	#endregion  
 
-        #region Schema Installation Methods
-        /// <summary>
-        /// Install a set of schema objects into the database
-        /// </summary>
-        /// <remarks>
-        /// This is a transactional operation.
-        /// Also, note that although the names of schema objects are validated to not contain insecure characters,
-        /// the scripts that are installed are not checked.
-        /// </remarks>
-        /// <param name="schemaGroup">The schema group to install objects into</param>
-        /// <param name="objects">The list of schema objects to install</param>
-        /// <exception cref="ArgumentException">If object names are not unique</exception>
-        /// <exception cref="ArgumentNullException">If schemaGroup is null</exception>
-        /// <exception cref="ArgumentNullException">If objects is null</exception>
-        /// <exception cref="SqlException">If any object fails to install</exception>
-        /// <exception cref="ArgumentException">If a parameter contains an invalid SQL character</exception>
-		public string Install (string schemaGroup, SchemaObjectCollection objects)
-		{
-			return Install (schemaGroup, objects, false);
-		}
-
-        public string Install (string schemaGroup, SchemaObjectCollection objects, bool rebuild)
-		{
-			return Install (schemaGroup, objects, rebuild ? RebuildMode.RebuildFull : RebuildMode.DetectChanges);
-		}
-
-        public string Install (string schemaGroup, SchemaObjectCollection objects, RebuildMode rebuildMode)
-        {
-			_scripts = new StringBuilder ();
-
-            // validate the arguments
-            if (schemaGroup == null) throw new ArgumentNullException ("schemaGroup");
-            if (objects == null) throw new ArgumentNullException ("objects");
-
-            // get the list of objects
-            List<SchemaObject> schemaObjects = new List<SchemaObject> (objects);
-            ValidateSchemaObjects (schemaObjects);
-            for (int i = 0; i < objects.Count; i++)
-                objects[i].OriginalOrder = i;
-
-            // sort the list of objects in installation order
-            schemaObjects.Sort (delegate (SchemaObject o1, SchemaObject o2) 
-            { 
-                int compare = o1.SchemaObjectType.CompareTo (o2.SchemaObjectType);
-                if (compare == 0)
-                    compare = o1.OriginalOrder.CompareTo (o2.OriginalOrder);
-                if (compare == 0)
-					compare = String.Compare(o1.Name, o2.Name, StringComparison.OrdinalIgnoreCase);
-				return compare;
-            });
-
-			// the schema changes must be done in a transaction
-            // since we don't pool the connection, we need to end the transaction before closing the connection
-            try
-            {
-                using (TransactionScope transaction = new TransactionScope (TransactionScopeOption.Required, new TimeSpan (1, 0, 0, 0, 0)))
-                {
-					// open the connection
-					OpenConnection ();
-
-					 // make sure we have a schema registry
-					SchemaRegistry registry = new SchemaRegistry (_connection);
-
-                    // keep a list of all of the operations we need to perform
-                    List<string> dropObjects = new List<string> ();
-                    List<SchemaObject> addObjects = new List<SchemaObject> ();
-                    List<SchemaObject> tableUpdates = new List<SchemaObject> ();
-
-                    // look through all of the existing objects in the registry
-                    // create a delete instruction for all of the ones that should no longer be there
-                    foreach (string objectName in registry.GetObjectNames (schemaGroup))
-                    {
-                        SchemaObject schemaObject = schemaObjects.Find (delegate (SchemaObject o) 
-						{
-							return (o.Name.ToUpperInvariant() == objectName.ToUpperInvariant());
-						});
-                        if (schemaObject == null)
-                            dropObjects.Add (objectName);
-                    }
-
-					// sort to drop in reverse dependency order 
-					dropObjects.Sort (delegate (string o1, string o2)
-					{
-						int compare = -registry.GetObjectType (o1).CompareTo (registry.GetObjectType (o2));
-						if (compare == 0)
-							compare = -registry.GetOriginalOrder(o1).CompareTo(registry.GetOriginalOrder(o2)); 
-						if (compare == 0)
-							compare = -String.Compare(o1, o2, StringComparison.OrdinalIgnoreCase);
-
-						return compare;
-					});
-
-                    // find out if we need to add anything
-                    foreach (SchemaObject schemaObject in schemaObjects)
-                    {
-                        // add any objects that aren't in the registry yet
-                        if (!registry.Contains (schemaObject.Name))
-                            addObjects.Add (schemaObject);
-                    }
-
-					// see if there are any drops or modifications
-					bool hasChanges = dropObjects.Count != 0;
-					if (!hasChanges)
-					{
-						foreach (SchemaObject schemaObject in schemaObjects)
-						{
-							if (registry.Contains (schemaObject.Name) &&
-								registry.GetSignature(schemaObject.Name) != schemaObject.GetSignature(this, objects))
-							{
-								hasChanges = true;
-								break;
-							}
-						}
-					}
-
-					// if there are changes, drop all of the easy items
-					// drop and re-add all of the easy items
-					if (hasChanges || (rebuildMode > RebuildMode.DetectChanges))
-					{
-						for (int i = schemaObjects.Count - 1; i >= 0; i--)
-						{
-							SchemaObject schemaObject = schemaObjects [i];
-							if (registry.Contains (schemaObject.Name) &&
-								(
-									IsEasyToModify (schemaObject.SchemaObjectType) || 
-									(rebuildMode >= RebuildMode.RebuildSafe && CanRebuildSafely (schemaObject.SchemaObjectType)) ||
-									(rebuildMode >= RebuildMode.RebuildFull && CanRebuild (schemaObject.SchemaObjectType))
-								) &&
-								!dropObjects.Contains (schemaObject.Name))
-							{
-								dropObjects.Add (schemaObject.Name);
-								addObjects.Add (schemaObject);
-							}
-						}
-					}
-
-					// drop and re-add everything else, using the scripting engine
-					for (int i = schemaObjects.Count - 1; i >= 0; i--)
-					{
-						SchemaObject schemaObject = schemaObjects [i];
-
-						if (registry.Contains (schemaObject.Name) && 
-							registry.GetSignature (schemaObject.Name) != schemaObject.GetSignature(this, objects) &&
-							!IsEasyToModify (schemaObject.SchemaObjectType) && 
-							!dropObjects.Contains (schemaObject.Name))
-                            ScheduleUpdate (dropObjects, addObjects, tableUpdates, schemaObject, true);
-					}
-
-					// sort to add in dependency order
-					addObjects.Sort (delegate (SchemaObject o1, SchemaObject o2)
-					{
-						int compare = o1.SchemaObjectType.CompareTo (o2.SchemaObjectType);
-						if (compare == 0)
-							compare = o1.OriginalOrder.CompareTo (o2.OriginalOrder);
-						if (compare == 0)
-							compare = String.Compare (o1.Name, o2.Name, StringComparison.OrdinalIgnoreCase);
-						return compare;
-					});
-
-                    // do the work
-                    DropObjects (registry, dropObjects, addObjects);
-                    UpdateTables (schemaGroup, registry, addObjects, tableUpdates, objects);
-					CreateObjects(schemaGroup, registry, addObjects, objects);
-					VerifyObjects (schemaObjects);
-
-					// update the sigs on all of the records
-					foreach (SchemaObject o in schemaObjects)
-						registry.UpdateObject(o, schemaGroup, this, objects);
-
-                    // commit the changes
-                    registry.Update ();
-                    transaction.Complete();
-                }
-            }
-            finally
-            {
-                _connection.Dispose ();
-            }
-
-			return _scripts.ToString ();
-        }
-
-		public bool Diff (string schemaGroup, SchemaObjectCollection schemaObjects)
-		{
-			try
-			{
-				OpenConnection ();
-				SchemaRegistry registry = new SchemaRegistry (_connection);
-
-				// drop and re-add everything else, using the scripting engine
-				foreach (SchemaObject schemaObject in schemaObjects)
-				{
-					// if the registry is missing the object, it's new, that's a diff
-					if (!registry.Contains (schemaObject.Name))
-						return true;
-
-					// if the signatures don't match, that's a diff
-					if (registry.GetSignature(schemaObject.Name) != schemaObject.GetSignature(this, schemaObjects))
-						return true;
-				}
-
-				// look through all of the existing objects in the registry
-				// create a delete instruction for all of the ones that should no longer be there
-				foreach (string objectName in registry.GetObjectNames (schemaGroup))
-				{
-					SchemaObject schemaObject = schemaObjects.FirstOrDefault (delegate (SchemaObject o)
-					{
-						return (o.Name.ToUpperInvariant() == objectName.ToUpperInvariant());
-					});
-					if (schemaObject == null)
-						return true;
-				}
-
-				// didn't detect differences
-				return false;
-			}
-			finally
-			{
-				_connection.Dispose ();
-			}
-		}
-
-		private static bool IsEasyToModify (SchemaObjectType schemaObjectType)
-		{
-			switch (schemaObjectType)
-			{
-				case SchemaObjectType.View:
-				case SchemaObjectType.Function:
-				case SchemaObjectType.StoredProcedure:
-				case SchemaObjectType.Permission:
-				case SchemaObjectType.Trigger:
-					return true;
-			}
-
-			return false;
-		}
-
-		private static bool CanRebuildSafely(SchemaObjectType schemaObjectType)
-		{
-			if (IsEasyToModify (schemaObjectType))
-				return true;
-
-			switch (schemaObjectType)
-			{
-				case SchemaObjectType.Constraint:
-				case SchemaObjectType.ForeignKey:
-					return true;
-			}
-
-			return false;
-		}
-
-		private static bool CanRebuild(SchemaObjectType schemaObjectType)
-		{
-			if (CanRebuildSafely (schemaObjectType))
-				return true;
-
-			switch (schemaObjectType)
-			{
-				case SchemaObjectType.IndexedView:
-				case SchemaObjectType.Index:
-				case SchemaObjectType.PrimaryKey:
-				case SchemaObjectType.PrimaryXmlIndex:
-				case SchemaObjectType.SecondaryXmlIndex:
-				case SchemaObjectType.UserScript:
-					return true;
-			}
-
-			return false;
-		}
-		
+		#region Schema Installation Methods
 		/// <summary>
-		/// Perform a dry run by running the install and rolling back
+		/// Script the changes that would be applied to the database.
 		/// </summary>
-		public string DryRun (string schemaGroup, SchemaObjectCollection objects)
+		/// <param name="schemaGroup">The name of the schemaGroup.</param>
+		/// <param name="schema">The schema to install.</param>
+		/// <returns>The script representing the changes to the database.</returns>
+		public string ScriptChanges(string schemaGroup, SchemaObjectCollection schema)
 		{
-			using (TransactionScope transaction = new TransactionScope (TransactionScopeOption.Required, new TimeSpan ()))
+			_connection.OnlyRecord(() => Install(schemaGroup, schema));
+
+			return _connection.ScriptLog.ToString();
+		}
+
+		/// <summary>
+		/// Install a schema into a database.
+		/// </summary>
+		/// <param name="schemaGroup">The name of the schemaGroup.</param>
+		/// <param name="schema">The schema to install.</param>
+		public void Install(string schemaGroup, SchemaObjectCollection schema)
+		{
+			_connection.ResetLog();
+
+			// validate the arguments
+			if (schemaGroup == null) throw new ArgumentNullException("schemaGroup");
+			if (schema == null) throw new ArgumentNullException("schema");
+
+			// make sure the schema objects are valid
+			schema.Validate();
+
+			// get the list of objects to install
+			List<SchemaObject> schemaObjects = OrderSchemaObjects(schema);
+
+			using (TransactionScope transaction = new TransactionScope(TransactionScopeOption.Required, new TimeSpan(1, 0, 0, 0, 0)))
 			{
-				return Install (schemaGroup, objects);
+				// load the schema registry from the database
+				SchemaRegistry registry = new SchemaRegistry(_connection, schemaGroup);
+
+				// find all of the objects that we need to drop
+				var dropObjects = registry.Entries
+					.Where(e => !schemaObjects.Any(o => String.Compare(e.ObjectName, o.Name, StringComparison.OrdinalIgnoreCase) == 0))
+					.ToList();
+
+				// sort to drop in reverse dependency order 
+				dropObjects.Sort((e1, e2) => -CompareByInstallOrder(e1, e2));
+
+				// find all of the objects that are new
+				var addObjects = schemaObjects.Where(o => !registry.Contains(o)).ToList();
+				addObjects.Sort(CompareByInstallOrder);
+
+				// find all of the objects that have changed
+				_connection.DoNotLog(() =>
+				{
+					foreach (var change in schemaObjects.Where(o => registry.Find(o) != null && registry.Find(o).Signature != o.GetSignature(_connection, schema)))
+						ScriptUpdate(dropObjects, addObjects, registry, change);
+				});
+
+				// sort the objects in install order
+				addObjects.Sort(CompareByInstallOrder);
+
+				// make the changes
+				DropObjects(dropObjects);
+				AddObjects(addObjects, schemaObjects);
+				VerifyObjects(schemaObjects);
+
+				// update the schema registry
+				registry.Update(schemaObjects);
+
+				// complete the changes
+				transaction.Complete();
 			}
 		}
 
-		private StringBuilder _scripts;
+		/// <summary>
+		/// Uninstall a schema group from the database.
+		/// </summary>
+		/// <remarks>This is a transactional operation</remarks>
+		/// <param name="schemaGroup">The group to uninstall</param>
+		/// <exception cref="ArgumentNullException">If schemaGroup is null</exception>
+		/// <exception cref="SqlException">If any object fails to uninstall</exception>
+		public void Uninstall(string schemaGroup)
+		{
+			// validate the arguments
+			if (schemaGroup == null) throw new ArgumentNullException("schemaGroup");
 
+			// create an empty collection and install that
+			SchemaObjectCollection objects = new SchemaObjectCollection();
+			Install(schemaGroup, objects);
+		}
+
+		/// <summary>
+		/// Determine if the given schema has differences with the current schema.
+		/// </summary>
+		/// <param name="schemaGroup">The schema group to compare.</param>
+		/// <param name="schema">The schema to compare with.</param>
+		/// <returns>True if there are any differences.</returns>
+		public bool Diff(string schemaGroup, SchemaObjectCollection schema)
+		{
+			// validate the arguments
+			if (schemaGroup == null) throw new ArgumentNullException("schemaGroup");
+			if (schema == null) throw new ArgumentNullException("schema");
+
+			SchemaRegistry registry = new SchemaRegistry(_connection, schemaGroup);
+
+			// if any objects are missing from the registry, then there is a difference
+			if (schema.Any(o => registry.Find(o.Name) == null))
+				return true;
+
+			// if there are any registry entries missing from the new schema, there is a difference
+			if (registry.Entries.Any(e => !schema.Any(o => String.Compare(e.ObjectName, o.Name, StringComparison.OrdinalIgnoreCase) == 0)))
+				return true;
+
+			// if there are any matches, but have different signatures, there is a difference
+			if (schema.Any(o => registry.Find(o.Name).Signature != o.GetSignature(_connection, schema)))
+				return true;
+
+			// didn't detect differences
+			return false;
+		}
+		#endregion
+
+		#region Scripting Methods
         /// <summary>
         /// Schedule an update by adding the appropriate delete, update and add records
         /// </summary>
-        /// <param name="dropObjects">The list of tdrops</param>
+        /// <param name="dropObjects">The list of drops</param>
         /// <param name="addObjects">The list of adds</param>
         /// <param name="tableUpdates">The list of table updates</param>
         /// <param name="schemaObject">The object to update</param>
-        private void ScheduleUpdate (List<string> dropObjects, List<SchemaObject> addObjects, List<SchemaObject> tableUpdates, SchemaObject schemaObject, bool handleDependencies)
+		private void ScriptUpdate(List<SchemaRegistryEntry> dropObjects, List<SchemaObject> addObjects, SchemaRegistry registry, SchemaObject schemaObject)
         {
-            // if the object is a table, we need to update it
-            if (schemaObject.SchemaObjectType == SchemaObjectType.Table)
-                tableUpdates.Add (schemaObject);
-            else
-            {
-                // not a table, so add a drop and insert
-                // put the add in before scripting the permissions so the permissions execute after the add
-                addObjects.Add (schemaObject);
-				if (handleDependencies)
+			// if we have already scripted this object, then don't do it again
+			if (addObjects.Any(o => o.Name == schemaObject.Name))
+				return;
+
+			// if this is a table, then let's see if we can just modify the table
+			if (schemaObject.SchemaObjectType == SchemaObjectType.Table)
+			{
+				ScriptStandardDependencies(dropObjects, addObjects, registry, schemaObject);
+				ScriptTableUpdate(schemaObject, addObjects);
+				return;
+			}
+
+			// add the object to the add queue before anything that depends on it, as well as any permissions on the object
+			if (addObjects.Any())
+				schemaObject.OriginalOrder = addObjects.Max(o => o.OriginalOrder) + 1;
+			else
+				schemaObject.OriginalOrder = 1;
+			addObjects.Add(schemaObject);
+
+			// don't log any of our scripting
+			ScriptPermissions(schemaObject, addObjects);
+			ScriptStandardDependencies(dropObjects, addObjects, registry, schemaObject);
+
+			// handle dependencies for different types of objects
+			if (schemaObject.SchemaObjectType == SchemaObjectType.IndexedView)
+			{
+				ScriptIndexes(dropObjects, addObjects, registry, schemaObject);
+			}
+			else if (schemaObject.SchemaObjectType == SchemaObjectType.PrimaryKey)
+			{
+				ScriptForeignKeys(dropObjects, addObjects, registry, schemaObject);
+				ScriptXmlIndexes(dropObjects, addObjects, registry, schemaObject);
+			}
+			else if (schemaObject.SchemaObjectType == SchemaObjectType.PrimaryXmlIndex)
+			{
+				ScriptXmlIndexes(dropObjects, addObjects, registry, schemaObject);
+			}
+			else if (schemaObject.SchemaObjectType == SchemaObjectType.Index)
+			{
+				ScriptIndexes(dropObjects, addObjects, registry, schemaObject);
+			}
+
+			// drop the object after any dependencies are dropped
+			SchemaRegistryEntry dropEntry = registry.Find(schemaObject.Name);
+			if (dropEntry == null)
+			{
+				dropEntry = new SchemaRegistryEntry()
 				{
-					switch (schemaObject.SchemaObjectType)
+					Type = schemaObject.SchemaObjectType,
+					ObjectName = schemaObject.Name
+				};
+			}
+			dropObjects.Add(dropEntry);
+        }
+
+		#region Table Update Methods
+		/// <summary>
+		/// Script the update of a table.
+		/// </summary>
+		/// <param name="schemaObject">The object to update.</param>
+		/// <param name="addObjects">The list of add scripts to add to.</param>
+		private void ScriptTableUpdate(SchemaObject schemaObject, List<SchemaObject> addObjects)
+		{
+			// detect the name of the table and replace it.
+			Regex createTableRegex = new Regex(@"CREATE\s+TABLE\s+[^\s]+", RegexOptions.IgnoreCase);
+
+			// we don't yet support modifying tables with inline constraints and defaults, so throw here and tell the user
+//			Regex primaryKeyRegex = new Regex(@"(PRIMARY\s+KEY)|(CONSTRAINT)|(CHECK\s*\()|(DEFAULT\s*\()", RegexOptions.IgnoreCase);
+//			if (primaryKeyRegex.IsMatch(schemaObject.Sql))
+			//				throw new ApplicationException(String.Format(CultureInfo.InvariantCulture, "Cannot modify {0} with an inline constraint or default. Move the constraint to a separate statement.", schemaObject.Name));
+
+			string oldTableName = schemaObject.Name;
+			string newTableName = "Insight__tmp_" + DateTime.Now.Ticks.ToString(CultureInfo.InvariantCulture);
+
+			try
+			{
+				// make a temporary table so we can analyze the difference
+				string tempTable = createTableRegex.Replace(schemaObject.Sql, "CREATE TABLE " + newTableName);
+				_connection.ExecuteSql(tempTable);
+
+				// get the columns for each of the tables
+				var oldColumns = GetColumnsForTable(oldTableName);
+				var newColumns = GetColumnsForTable(newTableName);
+
+				// delete old columns - this should be pretty free
+				var missingColumns = oldColumns.Where((dynamic o) => !newColumns.Any((dynamic n) => o.Name == n.Name));
+				if (missingColumns.Any())
+				{
+					StringBuilder sb = new StringBuilder();
+					sb.AppendLine("-- SCRIPT");
+					sb.AppendFormat("ALTER TABLE {0}", SqlParser.FormatSqlName(oldTableName));
+					sb.Append(" DROP");
+					sb.AppendLine(String.Join(",", missingColumns.Select((dynamic o) => String.Format(" COLUMN {0}", SqlParser.FormatSqlName(o.Name)))));
+					addObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
+				}
+
+				// add new columns - this is free when the columns are nullable
+				var addColumns = newColumns.Where((dynamic o) => !oldColumns.Any((dynamic n) => o.Name == n.Name));
+				if (addColumns.Any())
+				{
+					StringBuilder sb = new StringBuilder();
+					sb.AppendLine("-- SCRIPT");
+					sb.AppendFormat("ALTER TABLE {0}", SqlParser.FormatSqlName(oldTableName));
+					sb.Append(" ADD ");
+					sb.AppendLine(String.Join(", ", addColumns.Select((dynamic o) => GetColumnDefinition(o))));
+					addObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
+				}
+
+				// alter columns
+				foreach (dynamic oldColumn in oldColumns)
+				{
+					dynamic newColumn = newColumns.FirstOrDefault((dynamic n) => SqlParser.UnformatSqlName(n.Name) == SqlParser.UnformatSqlName(oldColumn.Name));
+					if (newColumn == null)
+						continue;
+
+					if (oldColumn.TypeName != newColumn.TypeName ||
+						oldColumn.MaxLength != newColumn.MaxLength ||
+						oldColumn.Precision != newColumn.Precision || 
+						oldColumn.Scale != newColumn.Scale ||
+						oldColumn.IsNullable != newColumn.IsNullable ||
+						oldColumn.IsIdentity != newColumn.IsIdentity ||
+						oldColumn.IdentitySeed != newColumn.IdentitySeed ||
+						oldColumn.IdentityIncrement != newColumn.IdentityIncrement)
 					{
-						case SchemaObjectType.StoredProcedure:
-							StoredProcedure sp = _database.StoredProcedures [schemaObject.UnformattedName];
-							if (sp != null)
-								ScriptPermissions (sp.Urn, addObjects);
-							break;
-
-						case SchemaObjectType.Function:
-							UserDefinedFunction udf = _database.UserDefinedFunctions [schemaObject.UnformattedName];
-							if (udf != null)
-								ScriptPermissions (udf.Urn, addObjects);
-							break;
-
-						case SchemaObjectType.View:
-							View view = _database.Views [schemaObject.UnformattedName];
-							if (view != null)
-								ScriptPermissions (view.Urn, addObjects);
-							break;
+						StringBuilder sb = new StringBuilder();
+						sb.AppendLine("-- SCRIPT");
+						sb.AppendFormat("ALTER TABLE {0} ALTER COLUMN ", SqlParser.FormatSqlName(oldTableName));
+						sb.AppendFormat(GetColumnDefinition(newColumn));
+						addObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
 					}
-                }
+				}
+			}
+			finally
+			{
+				// clean up the temporary table
+				_connection.ExecuteSql("DROP TABLE " + newTableName);
+			}
+		}
 
-                // insert at the beginning so the higher level objects get dropped before their dependencies
-				dropObjects.Add (schemaObject.Name);
-            }
-        }
+		/// <summary>
+		/// Get the columns for a table.
+		/// </summary>
+		/// <param name="tableName">The name of the table.</param>
+		/// <returns>The list of columns on the table.</returns>
+		private IEnumerable<FastExpando> GetColumnsForTable(string tableName)
+		{
+			return _connection.QuerySql(@"SELECT Name=c.name, TypeName = t.name, MaxLength=c.max_length, Precision=c.precision, scale=c.scale, IsNullable=c.is_nullable, IsIdentity=c.is_identity, IdentitySeed=i.seed_value, IdentityIncrement=i.increment_value
+				FROM sys.columns c
+				JOIN sys.types t ON (c.system_type_id = t.system_type_id AND c.user_type_id = t.user_type_id)
+				LEFT JOIN sys.identity_columns i ON (c.object_id = i.object_id AND c.column_id = i.column_id)
+				WHERE c.object_id = OBJECT_ID (@TableName)",
+				new { TableName = tableName });
+		}
 
-        private static void ValidateSchemaObjects (List<SchemaObject> schemaObjects)
-        {
-            // check for duplicate objects and invalid names
-            foreach (SchemaObject schemaObject in schemaObjects)
-            {
-                AssertValidSqlName (schemaObject.Name);
-                if (schemaObjects.FindAll (delegate (SchemaObject o) { return o.Name == schemaObject.Name; }).Count > 1)
-                    throw new ArgumentException (String.Format (CultureInfo.InvariantCulture, Properties.Resources.DuplicateObjectName, schemaObject.Name));
-            }
-        }
+		/// <summary>
+		/// Output the definition of a column.
+		/// </summary>
+		/// <param name="column">The column object.</param>
+		/// <returns>The string definition of the column.</returns>
+		private static string GetColumnDefinition(dynamic column)
+		{
+			StringBuilder sb = new StringBuilder();
+			sb.Append(SqlParser.FormatSqlName(column.Name));
+			sb.AppendFormat(" {0}", column.TypeName);
 
-        private void DropObjects (SchemaRegistry registry, List<string> dropObjects, List<SchemaObject> addObjects)
+			string typeName = column.TypeName;
+			switch (typeName)
+			{
+				case "nvarchar":
+				case "varchar":
+				case "varbinary":
+					if (column.MaxLength == -1)
+						sb.Append("(MAX)");
+					else
+						sb.AppendFormat("({0})", column.MaxLength);
+					break;
+
+				case "decimal":
+				case "numeric":
+					sb.AppendFormat("({0}, {1})", column.Precision, column.Scale);
+					break;
+			}
+
+			if (column.IsIdentity)
+				sb.AppendFormat(" IDENTITY ({0}, {1})", column.IdentitySeed, column.IdentityIncrement);
+
+			if (!column.IsNullable)
+				sb.Append(" NOT NULL");
+
+			return sb.ToString();
+		}
+		#endregion
+
+		/// <summary>
+		/// Script the permissions on an object and save the script to add the permissions back later
+		/// </summary>
+		/// <param name="schemaObject">The object to drop</param>
+		/// <param name="addObjects">The list of addObjects, or null to not re-add dependencies</param>
+		private void ScriptPermissions(SchemaObject schemaObject, List<SchemaObject> addObjects)
+		{
+			IList<FastExpando> permissions = null;
+
+			if (schemaObject.SchemaObjectType == SchemaObjectType.Role)
+			{
+				// get the current permissions on the object
+				permissions = _connection.QuerySql(@"SELECT UserName=u.name, Permission=p.permission_name, ClassType=p.class_desc, ObjectName=ISNULL(o.name, t.name)
+								FROM sys.database_principals u
+								JOIN sys.database_permissions p ON (u.principal_id = p.grantee_principal_id)
+								LEFT JOIN sys.objects o ON (p.class_desc = 'OBJECT_OR_COLUMN' AND p.major_id = o.object_id)
+								LEFT JOIN sys.types t ON (p.class_desc = 'TYPE' AND p.major_id = t.user_type_id)
+								WHERE u.name = @ObjectName",
+						new { ObjectName = SqlParser.UnformatSqlName(SqlParser.IndexNameFromFullName(schemaObject.Name.Split(' ')[1])) });
+			}
+			else
+			{
+				// get the current permissions on the object
+				permissions = _connection.QuerySql(@"SELECT UserName=u.name, Permission=p.permission_name, ClassType=p.class_desc, ObjectName=ISNULL(o.name, t.name)
+								FROM sys.database_principals u
+								JOIN sys.database_permissions p ON (u.principal_id = p.grantee_principal_id)
+								LEFT JOIN sys.objects o ON (p.class_desc = 'OBJECT_OR_COLUMN' AND p.major_id = o.object_id)
+								LEFT JOIN sys.types t ON (p.class_desc = 'TYPE' AND p.major_id = t.user_type_id)
+								WHERE ISNULL (o.name, t.name) = @ObjectName",
+						new { ObjectName = SqlParser.UnformatSqlName(schemaObject.Name) });
+			}
+
+			// create a new permission schema object to install for each existing permission
+			foreach (dynamic permission in permissions)
+				addObjects.Add(new SchemaObject(String.Format("GRANT {0} ON {1}{2} TO {3} -- DEPENDENCY", permission.Permission, permission.ClassType == "TYPE" ? "TYPE::" : "", SqlParser.FormatSqlName(permission.ObjectName), SqlParser.FormatSqlName(permission.UserName))));
+		}
+
+		/// <summary>
+		/// Script the standard dependencies such as stored procs and triggers.
+		/// </summary>
+		/// <param name="dropObjects">The current list of objects to drop.</param>
+		/// <param name="addObjects">The current list of objects to add.</param>
+		/// <param name="registry">The registry to modify.</param>
+		/// <param name="schemaObject">The schemaObject to script.</param>
+		private void ScriptStandardDependencies(List<SchemaRegistryEntry> dropObjects, List<SchemaObject> addObjects, SchemaRegistry registry, SchemaObject schemaObject)
+		{
+			// find all of the dependencies on the object
+			// this will find things that use views or tables
+			// note that there will be more than one dependency if more than one column is referenced
+			// ignore USER_TABLE, since that is calculated columns
+			var dependencies = _connection.QuerySql(@"SELECT DISTINCT Name = o.name, SqlType = o.type_desc, IsSchemaBound=d.is_schema_bound_reference
+				FROM sys.sql_expression_dependencies d
+				JOIN sys.objects o ON (d.referencing_id = o.object_id)
+				WHERE
+					o.type_desc <> 'USER_TABLE' AND 
+					(o.parent_object_id = OBJECT_ID(@ObjectName) OR
+					d.referenced_id =
+						CASE WHEN d.referenced_class_desc = 'TYPE' THEN (SELECT user_type_id FROM sys.types t WHERE t.name = @ObjectName)
+						ELSE OBJECT_ID(@ObjectName)
+					END)",
+				new { ObjectName = SqlParser.UnformatSqlName(schemaObject.Name) });
+
+			foreach (dynamic dependency in dependencies)
+			{
+				// we only have to update schemabound dependencies
+				if (schemaObject.SchemaObjectType == SchemaObjectType.Table && !dependency.IsSchemaBound)
+					continue;
+
+				// since the object isn't already being dropped, create a new SchemaObject for it and rebuild that
+				SchemaObject dropObject = null;
+				string dependencyType = dependency.SqlType;
+				string dependencyName = dependency.Name;
+
+				switch (dependencyType)
+				{
+					case "SQL_STORED_PROCEDURE":
+					case "SQL_SCALAR_FUNCTION":
+					case "SQL_TABLE_VALUED_FUNCTION":
+					case "SQL_TRIGGER":
+					case "VIEW":
+						// these objects can be rebuilt from the definition of the object in the database
+						dropObject = new SchemaObject(_connection.ExecuteScalarSql<string>("SELECT definition FROM sys.sql_modules WHERE object_id = OBJECT_ID(@Name)", new { Name = dependencyName }));
+						break;
+
+					case "CHECK_CONSTRAINT":
+						// need to do a little work to re-create the check constraint
+						dynamic checkConstraint = _connection.QuerySql(@"SELECT TableName=o.name, ConstraintName=c.name, Definition=c.definition
+							FROM sys.check_constraints c
+							JOIN sys.objects o ON (c.parent_object_id = o.object_id) WHERE c.object_id = OBJECT_ID(@Name)", new { Name = dependencyName }).First();
+
+						dropObject = new SchemaObject(String.Format(
+							"ALTER TABLE {0} ADD CONSTRAINT {1} CHECK {2}",
+							SqlParser.FormatSqlName(checkConstraint.TableName),
+							SqlParser.FormatSqlName(checkConstraint.ConstraintName),
+							checkConstraint.Definition));
+						break;
+
+					default:
+						throw new InvalidOperationException(String.Format(CultureInfo.InvariantCulture, "Cannot generate dependencies for object {0}.", dependencyName));
+				}
+
+				ScriptUpdate(dropObjects, addObjects, registry, dropObject);
+			}
+		}
+
+		/// <summary>
+		/// Script the foreign keys on a table or primary key.
+		/// </summary>
+		/// <param name="dropObjects">The current list of objects to drop.</param>
+		/// <param name="addObjects">The current list of objects to add.</param>
+		/// <param name="registry">The registry to modify.</param>
+		/// <param name="schemaObject">The schemaObject to script.</param>
+		private void ScriptForeignKeys(List<SchemaRegistryEntry> dropObjects, List<SchemaObject> addObjects, SchemaRegistry registry, SchemaObject schemaObject)
+		{
+			IList<FastExpando> foreignKeys = null;
+
+			if (schemaObject.SchemaObjectType == SchemaObjectType.PrimaryKey)
+			{
+				foreignKeys = _connection.QuerySql(@"SELECT Name=f.name, TableName=o.name, RefTableName=ro.name
+					FROM sys.foreign_keys f
+					JOIN sys.key_constraints k ON (f.referenced_object_id = k.parent_object_id)
+					JOIN sys.objects o ON (f.parent_object_id = o.object_id)
+					JOIN sys.objects ro ON (k.parent_object_id = ro.object_id)
+					WHERE k.name = @ObjectName",
+				new { ObjectName = SqlParser.IndexNameFromFullName(schemaObject.Name) });
+			}
+//			else
+//			{
+//				foreignKeys = _connection.QuerySql(@"SELECT Name=f.name, TableName=o.name, RefTableName=r.name
+//					FROM sys.foreign_keys f
+//					JOIN sys.objects o ON (f.parent_object_id = o.object_id)
+//					JOIN sys.objects r ON (f.referenced_object_id = r.object_id)
+//					WHERE f.referenced_object_id = OBJECT_ID(@ObjectName) OR f.parent_object_id = OBJECT_ID(@ObjectName)",
+//				new { ObjectName = SqlParser.IndexNameFromFullName(schemaObject.Name) });
+//			}
+
+			foreach (dynamic foreignKey in foreignKeys)
+			{
+				// get the columns in the key from the database
+				var columns = _connection.QuerySql(@"SELECT FkColumnName=fc.name, PkColumnName=kc.name
+						FROM sys.foreign_key_columns f
+						JOIN sys.columns fc ON (f.parent_object_id = fc.object_id AND f.parent_column_id = fc.column_id)
+						JOIN sys.columns kc ON (f.referenced_object_id = kc.object_id AND f.referenced_column_id = kc.column_id)
+						WHERE f.constraint_object_id = OBJECT_ID(@KeyName)",
+					new { KeyName = foreignKey.Name });
+
+				StringBuilder sb = new StringBuilder();
+				sb.AppendFormat("ALTER TABLE {0} ADD CONSTRAINT {1} FOREIGN KEY (",
+						SqlParser.FormatSqlName(foreignKey.TableName),
+						SqlParser.FormatSqlName(foreignKey.Name));
+				sb.Append(String.Join(",", columns.Select((dynamic c) => SqlParser.FormatSqlName(c.FkColumnName))));
+				sb.AppendFormat(") REFERENCES {0} (", SqlParser.FormatSqlName(foreignKey.RefTableName));
+				sb.Append(String.Join(",", columns.Select((dynamic c) => SqlParser.FormatSqlName(c.PkColumnName))));
+				sb.Append(")");
+
+				var dropObject = new SchemaObject(sb.ToString());
+
+				ScriptUpdate(dropObjects, addObjects, registry, dropObject);
+			}
+		}
+
+		/// <summary>
+		/// Script the indexes on a table, view, or clustered index.
+		/// </summary>
+		/// <param name="dropObjects">The current list of objects to drop.</param>
+		/// <param name="addObjects">The current list of objects to add.</param>
+		/// <param name="registry">The registry to modify.</param>
+		/// <param name="schemaObject">The schemaObject to script.</param>
+		private void ScriptIndexes(List<SchemaRegistryEntry> dropObjects, List<SchemaObject> addObjects, SchemaRegistry registry, SchemaObject schemaObject)
+		{
+			// get the indexes and constraints on a table
+			// NOTE: we don't script system named indexes because we assume they are specified as part of the table definition
+			// NOTE: order by type: do the clustered indexes first because they also drop nonclustered indexes if the object is a view (not a table)
+			IList<FastExpando> indexes = null;
+
+			if (schemaObject.SchemaObjectType == SchemaObjectType.Index)
+			{
+				indexes = _connection.QuerySql(@"
+					SELECT Name=i.name, TableName=o.name, Type=i.type_desc, IsUnique=i.is_unique, IsConstraint=CONVERT(bit, CASE WHEN k.object_id IS NOT NULL THEN 1 ELSE 0 END), IsPrimaryKey=CONVERT(bit, CASE WHEN k.type_desc = 'PRIMARY_KEY_CONSTRAINT' THEN 1 ELSE 0 END)
+						FROM sys.indexes currentindex
+						JOIN sys.indexes i ON (currentindex.object_id = i.object_id AND currentindex.index_id <> i.index_id)
+						JOIN sys.objects o ON (i.object_id = o.object_id)
+						LEFT JOIN sys.key_constraints k ON (o.object_id = k.parent_object_id AND i.index_id = k.unique_index_id AND is_system_named = 0)
+						WHERE currentindex.name = @objectname AND currentIndex.type_desc = 'CLUSTERED' AND i.name IS NOT NULL",
+						new { ObjectName = SqlParser.UnformatSqlName(schemaObject.Name) });
+			}
+			else
+			{
+				indexes = _connection.QuerySql(@"
+					SELECT Name=i.name, TableName=o.name, Type=i.type_desc, IsUnique=i.is_unique, IsConstraint=CONVERT(bit, CASE WHEN k.object_id IS NOT NULL THEN 1 ELSE 0 END), IsPrimaryKey=CONVERT(bit, CASE WHEN k.type_desc = 'PRIMARY_KEY_CONSTRAINT' THEN 1 ELSE 0 END)
+						FROM sys.indexes i
+						JOIN sys.objects o ON (i.object_id = o.object_id)
+						LEFT JOIN sys.key_constraints k ON (o.object_id = k.parent_object_id AND i.index_id = k.unique_index_id AND is_system_named = 0)
+						WHERE o.object_id = OBJECT_ID(@ObjectName) AND i.Name IS NOT NULL
+						ORDER BY Type",
+						new { ObjectName = SqlParser.UnformatSqlName(schemaObject.Name) });
+			}
+
+			foreach (dynamic index in indexes)
+			{
+				// get the columns in the key from the database
+				var columns = _connection.QuerySql(@"SELECT ColumnName=c.name
+					FROM sys.indexes i
+					JOIN sys.index_columns ic ON (i.object_id = ic.object_id AND i.index_id = ic.index_id)
+					JOIN sys.columns c ON (ic.object_id = c.object_id AND ic.column_id = c.column_id)
+					WHERE i.name = @IndexName",
+					new { IndexName = index.Name });
+
+				StringBuilder sb = new StringBuilder();
+				if (index.IsConstraint)
+				{
+					sb.AppendFormat("ALTER TABLE {3} ADD CONSTRAINT {2} {0}{1} (",
+						index.IsPrimaryKey ? "PRIMARY KEY " : index.IsUnique ? "UNIQUE " : "",
+						index.Type,
+						SqlParser.FormatSqlName(SqlParser.IndexNameFromFullName(index.Name)),
+						SqlParser.FormatSqlName(index.TableName));
+				}
+				else
+				{
+					sb.AppendFormat("CREATE {0}{1} INDEX {2} ON {3} (",
+						index.IsUnique ? "UNIQUE " : "",
+						index.Type,
+						SqlParser.FormatSqlName(SqlParser.IndexNameFromFullName(index.Name)),
+						SqlParser.FormatSqlName(index.TableName));
+				}
+				sb.Append(String.Join(",", columns.Select((dynamic c) => SqlParser.FormatSqlName(c.ColumnName))));
+				sb.Append(")");
+
+				var dropObject = new SchemaObject(sb.ToString());
+
+				ScriptUpdate(dropObjects, addObjects, registry, dropObject);
+			}
+		}
+
+		/// <summary>
+		/// Script the Xml Indexes on a table.
+		/// </summary>
+		/// <param name="dropObjects"></param>
+		/// <param name="addObjects"></param>
+		/// <param name="registry"></param>
+		/// <param name="schemaObject"></param>
+		private void ScriptXmlIndexes(List<SchemaRegistryEntry> dropObjects, List<SchemaObject> addObjects, SchemaRegistry registry, SchemaObject schemaObject)
+		{
+			IList<FastExpando> xmlIndexes;
+
+			if (schemaObject.SchemaObjectType == SchemaObjectType.PrimaryXmlIndex)
+			{
+				// find any secondary indexes dependent upon the primary index
+				xmlIndexes = _connection.QuerySql(@"
+						IF NOT EXISTS (SELECT * FROM sys.system_objects WHERE name = 'xml_indexes') SELECT TOP 0 Nothing=NULL ELSE
+						SELECT Name=i.name, TableName=o.name, SecondaryType=i.secondary_type_desc, ParentIndexName=@ObjectName
+						FROM sys.xml_indexes i
+						JOIN sys.objects o ON (i.object_id = o.object_id)
+						JOIN sys.xml_indexes p ON (p.index_id = i.using_xml_index_id)
+						WHERE p.name = @ObjectName",
+					new { ObjectName = SqlParser.IndexNameFromFullName(schemaObject.Name) });
+			}
+			else
+			{
+				// for tables and primary keys, look for primary xml indexes
+				xmlIndexes = _connection.QuerySql(@"
+						IF NOT EXISTS (SELECT * FROM sys.system_objects WHERE name = 'xml_indexes') SELECT TOP 0 Nothing=NULL ELSE
+						SELECT Name=i.name, TableName=o.name, SecondaryType=i.secondary_type_desc, ParentIndexName=u.name
+						FROM sys.xml_indexes i
+						JOIN sys.objects o ON (i.object_id = o.object_id)
+						LEFT JOIN sys.xml_indexes u ON (i.using_xml_index_id = u.index_id)
+						WHERE i.object_id = OBJECT_ID(@ObjectName)",
+					new { ObjectName = SqlParser.TableNameFromIndexName(schemaObject.Name) });
+			}
+
+			foreach (dynamic xmlIndex in xmlIndexes)
+			{
+				// get the columns in the key from the database
+				var columns = _connection.QuerySql(@"SELECT ColumnName=c.name
+					FROM sys.xml_indexes i
+					JOIN sys.index_columns ic ON (i.object_id = ic.object_id AND i.index_id = ic.index_id)
+					JOIN sys.columns c ON (ic.object_id = c.object_id AND ic.column_id = c.column_id)
+					WHERE i.name = @IndexName",
+					new { IndexName = xmlIndex.Name });
+
+				StringBuilder sb = new StringBuilder();
+				sb.AppendFormat("CREATE {0}XML INDEX {1} ON {2} (",
+					(xmlIndex.ParentIndexName == null) ? "PRIMARY " : "",
+					SqlParser.FormatSqlName(SqlParser.IndexNameFromFullName(xmlIndex.Name)),
+					SqlParser.FormatSqlName(xmlIndex.TableName));
+				sb.Append(String.Join(",", columns.Select((dynamic c) => SqlParser.FormatSqlName(c.ColumnName))));
+				sb.Append(")");
+				if (xmlIndex.SecondaryType != null)
+				{
+					sb.AppendFormat(" USING XML INDEX {0} FOR ", xmlIndex.ParentIndexName);
+					sb.Append(xmlIndex.SecondaryType);
+				}
+
+				var dropObject = new SchemaObject(sb.ToString());
+
+				ScriptUpdate(dropObjects, addObjects, registry, dropObject);
+			}
+		}
+		#endregion
+
+		#region Execution Methods
+		/// <summary>
+		/// Add all of the objects that need to be added.
+		/// </summary>
+		/// <param name="addObjects">The objects to add.</param>
+		/// <param name="objects">The entire schema. Needed for AutoProcs.</param>
+		private void AddObjects(List<SchemaObject> addObjects, IEnumerable<SchemaObject> objects)
+		{
+			// create objects
+			foreach (SchemaObject schemaObject in addObjects)
+			{
+				if (CreatingObject != null)
+					CreatingObject(this, new SchemaEventArgs(SchemaEventType.BeforeCreate, schemaObject));
+
+				schemaObject.Install(_connection, objects);
+
+				if (CreatedObject != null)
+					CreatedObject(this, new SchemaEventArgs(SchemaEventType.AfterCreate, schemaObject));
+			}
+		}
+
+		/// <summary>
+		/// Drop objects that need to be dropped.
+		/// </summary>
+		/// <param name="dropObjects">The list of objects to drop.</param>
+		private void DropObjects(IEnumerable<SchemaRegistryEntry> dropObjects)
         {
             // drop objects
-            foreach (string objectName in dropObjects)
+            foreach (var dropObject in dropObjects)
             {
                 if (DroppingObject != null)
-                    DroppingObject (this, new SchemaEventArgs (SchemaEventType.BeforeDrop, objectName));
+					DroppingObject(this, new SchemaEventArgs(SchemaEventType.BeforeDrop, dropObject.ObjectName));
 
-                // drop any table dependencies, if any
-                SchemaObjectType type = registry.GetObjectType (objectName);
-                switch (type)
-                {
-					case SchemaObjectType.UserDefinedType:
-						DropTypeDependencies(objectName, addObjects);
-						break;
-
-					case SchemaObjectType.View:
-						DropViewDependencies (objectName, addObjects);
-						break;
-
-                    case SchemaObjectType.Table:
-						DropTableDepencencies(objectName, null, TableScriptOptions.IncludeTableModifiers | TableScriptOptions.AllXmlIndexes, true);
-                        break;
-
-                    case SchemaObjectType.PrimaryKey:
-						DropTableDepencencies(SchemaObject.TableNameFromIndexName(objectName), addObjects, TableScriptOptions.AddAtEnd | TableScriptOptions.AllXmlIndexes, false);
-                        break;
-
-                    case SchemaObjectType.PrimaryXmlIndex:
-						DropTableDepencencies(SchemaObject.TableNameFromIndexName(objectName), addObjects, TableScriptOptions.AddAtEnd | TableScriptOptions.SecondaryXmlIndexes, false);
-                        break;
-                }
-
-                SchemaObject.Drop (this, _connection, type, objectName);
-                registry.DeleteObject (objectName);
-				ResetScripter ();
-            }
-        }
-
-        private void UpdateTables (string schemaGroup, SchemaRegistry registry, List<SchemaObject> addObjects, List<SchemaObject> tableUpdates, SchemaObjectCollection objects)
-        {
-            foreach (SchemaObject schemaObject in tableUpdates)
-            {
-                if (UpdatingTable != null)
-                    UpdatingTable (this, new SchemaEventArgs (SchemaEventType.BeforeTableUpdate, schemaObject));
-
-				DropTableDepencencies(schemaObject.Name, addObjects, TableScriptOptions.IncludeTableModifiers | TableScriptOptions.AllXmlIndexes, true);
-
-                // signature has changed, so update the object
-                UpdateTable (_connection, schemaObject, objects);
-                registry.UpdateObject (schemaObject, schemaGroup, this, objects);
-
-                if (UpdatedTable != null)
-                    UpdatedTable (this, new SchemaEventArgs (SchemaEventType.AfterTableUpdate, schemaObject));
-            }
-        }
-
-        private void CreateObjects (string schemaGroup, SchemaRegistry registry, List<SchemaObject> addObjects, SchemaObjectCollection objects)
-        {
-            // create objects
-            foreach (SchemaObject schemaObject in addObjects)
-            {
-                if (CreatingObject != null)
-                    CreatingObject (this, new SchemaEventArgs (SchemaEventType.BeforeCreate, schemaObject));
-
-				schemaObject.Install(this, objects);
-
-                if (schemaObject.SchemaObjectType != SchemaObjectType.Script)
-					registry.UpdateObject(schemaObject, schemaGroup, this, objects);
-
-                if (CreatedObject != null)
-                    CreatedObject (this, new SchemaEventArgs (SchemaEventType.AfterCreate, schemaObject));
+				SchemaObject.Drop(_connection, dropObject.Type, dropObject.ObjectName);
             }
         }
 
@@ -527,754 +826,13 @@ namespace Insight.Database.Schema
 		/// <param name="schemaObjects">The objects</param>
 		private void VerifyObjects (List<SchemaObject> schemaObjects)
 		{
-            // create objects
 			foreach (SchemaObject schemaObject in schemaObjects)
-				schemaObject.Verify(this, _connection, schemaObjects);
-		}
-
-        #region Table Update Methods
-        /// <summary>
-        /// Update a table object
-        /// </summary>
-        /// <param name="connection">The SqlConnection to use</param>
-        /// <remarks>This creates a copy of the table data, updates the table, then copies the data back into the new table.</remarks>
-        private void UpdateTable (SqlConnection connection, SchemaObject schemaObject, SchemaObjectCollection objects)
-        {
-            // copy the table to a temp table and drop the old table
-            // NOTE: sp_rename can't be used because we're in a distributed transaction
-            SqlCommand command = new SqlCommand ();
-            command.Connection = connection;
-            //command.CommandText = String.Format (CultureInfo.InvariantCulture, "SELECT * INTO {0} FROM {1}; DROP TABLE {1}", TempTableName, schemaObject.Name);
-			command.CommandText = String.Format (CultureInfo.InvariantCulture, "sp_rename '{1}', '{0}'", TempTableName, schemaObject.Name);
-			command.CommandTimeout = 0;
-            command.ExecuteNonQuery ();
-
-            // create the new table using the script provided
-			schemaObject.Install(this, objects);
-
-            if (!DoConvertTable (schemaObject, TempTableName, schemaObject.Name))
-            {
-                // get the columns for the two tables
-				command.CommandText = String.Format (CultureInfo.InvariantCulture, @"
-					select c.*, type_name = t.name from sys.columns c join sys.types t on (c.system_type_id = t.system_type_id and c.user_type_id = t.user_type_id) where object_id = object_id ('{0}');
-					select c.*, type_name = t.name from sys.columns c join sys.types t on (c.system_type_id = t.system_type_id and c.user_type_id = t.user_type_id) where object_id = object_id ('{1}');
-				", TempTableName, schemaObject.UnformattedName);
-                SqlDataAdapter adapter = new SqlDataAdapter ();
-                adapter.SelectCommand = command;
-                DataSet dataset = new DataSet ();
-                dataset.Locale = CultureInfo.InvariantCulture;
-                adapter.Fill (dataset);
-
-                // find all of the fields that match from the old table to the new table
-                // for these fields, we'll preserve the data
-                StringBuilder newFields = new StringBuilder ();
-                StringBuilder oldFields = new StringBuilder ();
-                foreach (DataRow newRow in dataset.Tables[1].Rows)
-                {
-                    string columnName = newRow["name"].ToString ();
-
-                    // don't map over timestamps and computed columns, they get done automatically
-                    if (newRow["type_name"].ToString () == "timestamp")
-                        continue;
-					if (Convert.ToInt32 (newRow ["is_computed"], CultureInfo.InvariantCulture) == 1)
-						continue;
-
-                    // find a matching oldRow
-                    DataRow[] oldRows = dataset.Tables[0].Select (String.Format (CultureInfo.InvariantCulture, "name = '{0}'", columnName));
-
-                    // map old fields to new fields
-                    if (oldRows.Length == 1)
-                    {
-                        if (newFields.Length > 0) newFields.Append (",");
-                        newFields.AppendFormat ("[{0}]", columnName);
-
-                        if (oldFields.Length > 0) oldFields.Append (",");
-                        oldFields.AppendFormat ("[{0}]", columnName);
-                    }
-                }
-
-                // copy the data into the new table
-                command.CommandText = String.Format (CultureInfo.InvariantCulture, 
-                    @"  IF OBJECTPROPERTY (OBJECT_ID('{0}'), 'TableHasIdentity') = 1 
-                            SET IDENTITY_INSERT {0} ON; 
-                        INSERT INTO {0} ({1}) SELECT {2} FROM {3}; 
-                        IF OBJECTPROPERTY (OBJECT_ID('{0}'), 'TableHasIdentity') = 1 
-                            SET IDENTITY_INSERT {0} OFF", 
-                    schemaObject.Name, newFields, oldFields, TempTableName);
-                command.ExecuteNonQuery ();
-            }
-
-            // drop the temp table
-            command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP TABLE {0}", TempTableName);
-            command.ExecuteNonQuery ();
-        }
-
-        private bool DoConvertTable (SchemaObject table, string beforeTable, string afterTable)
-        {
-            if (ConvertingTable != null)
-            {
-                ConvertTableEventArgs ce = new ConvertTableEventArgs (SchemaEventType.ConvertTable, table, _connection, beforeTable, afterTable);
-                ConvertingTable (this, ce);
-                return ce.Converted;
-            }
-            return false;
-        }
-
-        /// <summary>
-        /// The name of the temporary table to use
-        /// </summary>
-        public static readonly string TempTableName = "Insight_tmpTable";
-        #endregion
-
-        /// <summary>
-        /// Uninstall a schema group from the database.
-        /// </summary>
-        /// <remarks>This is a transactional operation</remarks>
-        /// <param name="schemaGroup">The group to uninstall</param>
-        /// <exception cref="ArgumentNullException">If schemaGroup is null</exception>
-        /// <exception cref="SqlException">If any object fails to uninstall</exception>
-        public void Uninstall (string schemaGroup)
-        {
-            // validate the arguments
-            if (schemaGroup == null) throw new ArgumentNullException ("schemaGroup");
-
-            // the schema changes must be done in a transaction
-            try
-            {
-                using (TransactionScope transaction = new TransactionScope ())
-                {
-                    // open the connection
-                    OpenConnection ();
-
-                    // make sure we have a schema registry
-                    SchemaRegistry registry = new SchemaRegistry (_connection);
-
-                    // sort the objects in drop order (reverse create order)
-                    List<string> names = registry.GetObjectNames (schemaGroup);
-                    names.Sort (delegate (string n1, string n2)
-                    {
-                        return -registry.GetObjectType (n1).CompareTo (registry.GetObjectType (n2));
-                    });
-
-                    // delete any objects that are in the specified schema group
-                    foreach (string objectName in names)
-                    {
-                        if (DroppingObject != null)
-                            DroppingObject (this, new SchemaEventArgs (SchemaEventType.BeforeDrop, objectName));
-
-                        SchemaObjectType type = registry.GetObjectType (objectName);
-                        if (type == SchemaObjectType.Table)
-							DropTableDepencencies(objectName, null, TableScriptOptions.IncludeTableModifiers, true);
-                        SchemaObject.Drop (this, _connection, type, objectName);
-                        registry.DeleteObject (objectName);
-                    }
-
-                    // commit the changes
-                    registry.Update ();
-                    transaction.Complete();
-                }
-            }
-            finally
-            {
-                _connection.Dispose ();
-            }
-        }
-        #endregion
-
-        #region Scripting Methods
-        /// <summary>
-        /// Specifies how table scripting should be done
-        /// </summary>
-        [Flags]
-        enum TableScriptOptions
-        {
-            /// <summary>
-            /// Script the constraints on the table itself
-            /// </summary>
-            IncludeTableModifiers = 1 << 0,
-
-            /// <summary>
-            /// Add the changes to the end of the list, not the beginning
-            /// </summary>
-            AddAtEnd = 1 << 1,
-
-            /// <summary>
-            /// Are we scripting the existing table or a table referencing our table
-            /// </summary>
-            ScriptAnonymousConstraints = 1 << 2,
-
-            /// <summary>
-            /// Script Primary Xml Indexes
-            /// </summary>
-            PrimaryXmlIndexes = 1 << 3,
-
-            /// <summary>
-            /// Script Secondary Xml Indexes
-            /// </summary>
-            SecondaryXmlIndexes = 1 << 4,
-
-            /// <summary>
-            /// All Xml Indexes
-            /// </summary>
-            AllXmlIndexes = PrimaryXmlIndexes | SecondaryXmlIndexes,
-        }
-
-        /// <summary>
-        /// Drops all of the dependencies on a table so the table can be updated.
-        /// </summary>
-        /// <param name="tableName">The table to update</param>
-        /// <param name="addObjects">The list of addObjects, or null to not re-add dependencies</param>
-        /// <param name="tableUpdates">The list of updated being made to tables. Need to prevent duplicate changes</param>
-        /// <param name="options">Options for scripting</param>
-        /// <remarks>Drops the dependencies and adds SchemaObjects to readd the dependencies later</remarks>
-		private void DropTableDepencencies(string tableName, List<SchemaObject> addObjects, TableScriptOptions options, bool modifyingTable)
-        {
-            Table table = _database.Tables[SchemaObject.UnformatSqlName (tableName)];
-            if (table == null)
-                return;
-
-            DependencyTree tree = _scripter.DiscoverDependencies (new SqlSmoObject[] { table }, DependencyType.Children);
-
-            // find all of the tables that refer to this table and drop all of the foreign keys
-            for (DependencyTreeNode dependent = tree.FirstChild.FirstChild; dependent != null; dependent = dependent.NextSibling)
-            {
-				if (dependent.Urn.Type == "Table")
-				{
-					// script the re-add of foreign keys, but not the tables themselves
-					_scripter.Options = new ScriptingOptions (ScriptOption.DriForeignKeys) - ScriptOption.PrimaryObject;
-
-					// don't script anonymous constraints.
-					// if they are on the table, they will get created with the new table
-					// if they are not on the table, they should go away
-					options &= ~TableScriptOptions.ScriptAnonymousConstraints;
-
-					DropAndReAdd (dependent.Urn, addObjects, options);
-				}
-				else
-				if (modifyingTable && dependent.Urn.Type == "View")
-				{
-					DropViewDependencies (dependent.Urn, addObjects);
-					DropAndReAdd (dependent.Urn, addObjects, options);
-				}
-            }
-
-            // handle xml indexes separately
-            if ((options & TableScriptOptions.AllXmlIndexes) != 0)
-            {
-                // drop all of the permissions, constraints, etc. on this table, but not the table itself
-                _scripter.Options = new ScriptingOptions ();
-                _scripter.Options.XmlIndexes = true;
-                _scripter.Options -= ScriptOption.PrimaryObject;
-
-                TableScriptOptions xmlOptions = options;
-                if ((options & TableScriptOptions.PrimaryXmlIndexes) != 0)
-                    xmlOptions &= ~TableScriptOptions.AddAtEnd;
-                DropAndReAdd (tree.FirstChild.Urn, addObjects, xmlOptions);
-            }
-
-            // drop the objects on the table itself
-            if ((options & TableScriptOptions.IncludeTableModifiers) != 0)
-            {
-                options &= ~TableScriptOptions.ScriptAnonymousConstraints;
-
-                // drop all of the permissions, constraints, etc. on this table, but not the table itself
-                _scripter.Options = new ScriptingOptions ();
-                _scripter.Options.DriAll = true;
-				_scripter.Options.NonClusteredIndexes = true;
-				_scripter.Options.ClusteredIndexes = true;
-                _scripter.Options -= ScriptOption.PrimaryObject;
-                DropAndReAdd (tree.FirstChild.Urn, addObjects, options);
-
-                // script the permissions on the table
-                ScriptPermissions (tree.FirstChild.Urn, addObjects);
-
-                _scripter.Options = new ScriptingOptions (ScriptOption.Triggers);
-                DropAndReAdd (tree.FirstChild.Urn, addObjects, options);
-            }
-
-			ResetConnectionToCorrectDatabase();
-        }
-
-		private void ResetConnectionToCorrectDatabase()
-		{
-			// SMO changes databases, so switch back here
-			if (_connection.Database != _databaseName)
-				_connection.ChangeDatabase(_databaseName);
-		}
-
-		private void DropViewDependencies (Urn urn, List<SchemaObject> addObjects)
-		{
-			DependencyTree tree = _scripter.DiscoverDependencies (new Urn [] { urn }, DependencyType.Children);
-			for (DependencyTreeNode dependent = tree.FirstChild.FirstChild; dependent != null; dependent = dependent.NextSibling)
-			{
-				// for each child object, script it and its permissions
-				_scripter.Options = new ScriptingOptions ();
-				_scripter.Options.DriAll = true;
-				_scripter.Options.Permissions = true;
-				DropAndReAdd (dependent.Urn, addObjects, TableScriptOptions.AddAtEnd);
-			}
-
-			ResetConnectionToCorrectDatabase();
-		}
-
-		private void DropViewDependencies (string viewName, List<SchemaObject> addObjects)
-		{
-			View view = _database.Views [SchemaObject.UnformatSqlName (viewName)];
-			if (view == null)
-				return;
-
-			DropViewDependencies (view.Urn, addObjects);
-		}
-
-		private void DropTypeDependencies (string name, List<SchemaObject> addObjects)
-		{
-			var type = _database.UserDefinedTableTypes[SchemaObject.UnformatSqlName(name)];
-			if (type == null)
-				return;
-
-			DropTypeDependencies(type.Urn, addObjects);
-		}
-
-		private void DropTypeDependencies (Urn urn, List<SchemaObject> addObjects)
-		{
-			DependencyTree tree = _scripter.DiscoverDependencies(new Urn[] { urn }, DependencyType.Children);
-			for (DependencyTreeNode dependent = tree.FirstChild.FirstChild; dependent != null; dependent = dependent.NextSibling)
-			{
-				// for each child object, script it and its permissions
-				_scripter.Options = new ScriptingOptions();
-				_scripter.Options.DriAll = true;
-				_scripter.Options.Permissions = true;
-				DropAndReAdd(dependent.Urn, addObjects, TableScriptOptions.AddAtEnd);
-			}
-		}
-
-		/// <summary>
-        /// Script the permissions on an object and save the script to add the permissions back later
-        /// </summary>
-        /// <param name="urn">The object to drop</param>
-        /// <param name="addObjects">The list of addObjects, or null to not re-add dependencies</param>
-		private void ScriptPermissions (Urn urn, List<SchemaObject> addObjects)
-        {
-            if (addObjects == null)
-                return;
-
-            // generate the script and add it if we've generated anything
-            _scripter.Options = new ScriptingOptions (ScriptOption.Permissions);
-            _scripter.Options.IncludeIfNotExists = true;
-            _scripter.Options.ScriptDrops = false;
-            string addScript = GenerateScript (urn);
-
-            // scripting permissions on a function returns the body
-			if (addScript.IndexOf("CREATE FUNCTION", StringComparison.OrdinalIgnoreCase) >= 0)
-                addScript = "";
-
-            if (addScript.Length > 0)
-                addObjects.Add (new SchemaObject (SchemaObjectType.Permission, "Scripted Permissions", addScript));
-
-			ResetConnectionToCorrectDatabase();
-		}
-
-        /// <summary>
-        /// Drop an object and generate the script to re-add it
-        /// </summary>
-        /// <param name="urn">The object to drop</param>
-        /// <param name="addObjects">The list of addObjects, or null to not re-add dependencies</param>
-        /// <param name="options">Options for scripting</param>
-        private void DropAndReAdd (Urn urn, List<SchemaObject> addObjects, TableScriptOptions options)
-        {
-            // generate the script to readd
-            if (addObjects != null)
-            {
-                _scripter.Options.ScriptDrops = false;
-                _scripter.Options.IncludeIfNotExists = true;
-                string addScript = GenerateScript (urn);
-
-                // unnamed primary keys and constraints need to not be auto-added, since they must be built into the table
-				if ((options & TableScriptOptions.ScriptAnonymousConstraints) != 0)
-					addScript = _anonymousReferenceRegex.Replace (addScript, "IF 0=1 $0");
-				else
-				{
-					addScript = _anonymousRegex.Replace (addScript, "IF 0=1 $0");
-					addScript = _anonymousDefaultRegex.Replace (addScript, "IF 0=1 $0");
-				}
-
-                // if the database has autostatistics, then skip all statistics
-                addScript = _statisticsRegex.Replace (addScript, "");
-
-                // create triggers must be the first statement in the batch
-				int pos = addScript.IndexOf("CREATE TRIGGER", StringComparison.OrdinalIgnoreCase);
-                if (pos >= 0)
-                    addScript = addScript.Substring (pos);
-
-                // remove primary xml indexes if we don't need them
-                if ((options & TableScriptOptions.PrimaryXmlIndexes) == 0)
-                    addScript = _primaryXmlIndex.Replace (addScript, "IF 0=1 $0");
-
-                if (addScript.Length > 0)
-                {
-                    SchemaObject newObject = new SchemaObject (SchemaObjectType.Script, "Scripted Dependencies", addScript);
-                    if ((options & TableScriptOptions.AddAtEnd) != 0)
-                        addObjects.Add (newObject);
-                    else
-                        addObjects.Insert (0, newObject);
-                }
-            }
-
-            // script the drop of everything
-            _scripter.Options.ScriptDrops = true;
-			_scripter.Options.IncludeIfNotExists = true;
-            string dropScript = GenerateScript (urn);
-
-            // the scripter should not be scripting the table drop, so we have to comment it out
-            // note that the !PrimaryObject option above works for the create script
-            SqlSmoObject smo = _scripter.Server.GetSmoObject (urn);
-            Table table = smo as Table;
-            if (table != null)
-                dropScript = _dropTableRegex.Replace (dropScript, "SELECT 1");
-
-
-			ResetConnectionToCorrectDatabase();
-
-			if (!String.IsNullOrWhiteSpace(dropScript))
-	            ExecuteNonQuery (dropScript);
-
-			ResetScripter ();
-        }
-
-        /// <summary>
-        /// Matches a DROP TABLE statement
-        /// </summary>
-        private static readonly Regex _dropTableRegex = new Regex (String.Format (CultureInfo.InvariantCulture, @"DROP \s+ TABLE \s+ {0}", SchemaObject.SqlNameExpression), RegexOptions.IgnoreCase | RegexOptions.IgnorePatternWhitespace);
-
-        /// <summary>
-        /// Matches a CREATE STATISTICS statement
-        /// </summary>
-        private static readonly Regex _statisticsRegex = new Regex (String.Format (CultureInfo.InvariantCulture, @"CREATE\s+STATISTICS\s+(?<name>{0})\s+ON\s+{0}\({0}(,\s*{0})*\)", SchemaObject.SqlNameExpression), RegexOptions.IgnoreCase | RegexOptions.IgnorePatternWhitespace);
-
-        /// <summary>
-        /// Matches anonymous keys and check constraints
-        /// </summary>
-        private static readonly Regex _anonymousRegex = new Regex (String.Format (CultureInfo.InvariantCulture, @"ALTER\s+TABLE\s+{0}(\s+WITH\s+CHECK)?\s+ADD\s+(((PRIMARY|FOREIGN)\s+KEY(\s+(NON)?CLUSTERED)?)|(CHECK))", SchemaObject.SqlNameExpression), RegexOptions.IgnoreCase | RegexOptions.IgnorePatternWhitespace);
-
-        /// <summary>
-        /// Matches anonymous keys and check constraints on table references.
-        /// </summary>
-        /// <remarks>We need to script anonymous FKs on reference tables, because we drop them</remarks>
-        private static readonly Regex _anonymousReferenceRegex = new Regex (String.Format (CultureInfo.InvariantCulture, @"ALTER\s+TABLE\s+{0}(\s+WITH\s+CHECK)?\s+ADD\s+(((PRIMARY)\s+KEY(\s+(NON)?CLUSTERED)?)|(CHECK))", SchemaObject.SqlNameExpression), RegexOptions.IgnoreCase | RegexOptions.IgnorePatternWhitespace);
-
-        /// <summary>
-        /// Matches anonymous keys and check constraints on table references.
-        /// </summary>
-        /// <remarks>We need to script anonymous FKs on reference tables, because we drop them</remarks>
-        private static readonly Regex _anonymousDefaultRegex = new Regex (String.Format (CultureInfo.InvariantCulture, @"ALTER\s+TABLE\s+{0}\s+ADD\s+DEFAULT\s+\([^\]]+]", SchemaObject.SqlNameExpression), RegexOptions.IgnoreCase | RegexOptions.IgnorePatternWhitespace);
-
-        /// <summary>
-        /// Matches primary xml index 
-        /// </summary>
-        private static readonly Regex _primaryXmlIndex = new Regex (@"CREATE\s+PRIMARY\s+XML\s+INDEX", RegexOptions.IgnoreCase | RegexOptions.IgnorePatternWhitespace);
-
-        /// <summary>
-        /// Generate a script for a database object.
-        /// </summary>
-        /// <param name="urns">The object to script</param>
-        /// <returns>String containg the script</returns>
-        private string GenerateScript (Urn urn)
-        {
-            UrnCollection urns = new UrnCollection ();
-            urns.Add (urn);
-
-            return GenerateScript (urns);
-        }
-
-        /// <summary>
-        /// Generate a script for a database object.
-        /// </summary>
-        /// <param name="urns">The objects to script</param>
-        /// <returns>String containg the script</returns>
-        private string GenerateScript (UrnCollection urns)
-        {
-            _scripter.Options.ContinueScriptingOnError = true;
-
-            // script the the list of objects passed in
-            StringCollection scriptCollection = _scripter.Script (urns);
-            StringBuilder sb = new StringBuilder ();
-            foreach (string s in scriptCollection)
-                sb.AppendLine (s);
-
-            return sb.ToString();
-        }
-        #endregion
-
-        #region Private Members
-        /// <summary>
-        /// Opens the connection to the database and get a new command
-        /// </summary>
-        /// <returns>The connection to the database</returns>
-        private SqlConnection OpenConnection ()
-        {
-            // connect to the database
-            _connection = new SqlConnection (_connectionString);
-            _connection.Open ();
-            _command = new SqlCommand ();
-            _command.Connection = _connection;
-
-			ResetScripter ();
-
-            return _connection;
-        }
-
-		/// <summary>
-		/// Reset the scripter so the objects aren't cached
-		/// </summary>
-		private void ResetScripter ()
-		{
-            // prepare the SMO objects
-            ServerConnection connection = new ServerConnection (_connection);
-            Server server = new Server (connection);
-            _database = server.Databases.OfType<Microsoft.SqlServer.Management.Smo.Database>().FirstOrDefault(d => String.CompareOrdinal(d.Name, _databaseName) == 0);
-            _scripter = new Scripter (server);
-		}
-
-        /// <summary>
-        /// Execute sql directly
-        /// </summary>
-        /// <param name="sql">The sql to execute</param>
-        internal void ExecuteNonQuery (string sql)
-        {
-			// append the contents of the command
-			if (_scripts != null)
-			{
-				_scripts.AppendLine (sql);
-				_scripts.AppendLine ("GO");
-			}
-
-			// never time out an upgrade
-			_command.CommandTimeout = 0;
-            _command.CommandText = sql;
-            _command.ExecuteNonQuery ();
-
-			ResetScripter ();
-        }
-
-		/// <summary>
-		/// Execute sql directly
-		/// </summary>
-		/// <param name="sql">The sql to execute</param>
-		void IDbInstallConnection.ExecuteNonQuery(string sql)
-		{
-			ExecuteNonQuery(sql);
-		}
-
-		/// <summary>
-		/// Execute sql directly
-		/// </summary>
-		/// <param name="sql">The sql to execute</param>
-		IDataReader IDbInstallConnection.GetDataReader(string sql)
-		{
-			// never time out an upgrade
-			_command.CommandTimeout = 0;
-			_command.CommandText = sql;
-			return _command.ExecuteReader();
-		}
-
-        /// <summary>
-        /// Check to see if the database exists
-        /// </summary>
-        /// <returns>True if the database already exists</returns>
-        private bool DatabaseExists ()
-        {
-            _command = new SqlCommand ("SELECT COUNT (*) FROM master..sysdatabases WHERE name = @DatabaseName", _connection);
-            _command.Parameters.AddWithValue ("@DatabaseName", _databaseName);
-            int count = (int)_command.ExecuteScalar ();
-            _command.Parameters.Clear ();
-
-            return count > 0;
-        }
-
-        /// <summary>
-        /// The connection string to the database
-        /// </summary>
-        private string _connectionString;
-
-		/// <summary>
-		/// The connection string to the master database (for create/drop)
-		/// </summary>
-		private string _masterConnectionString;
-
-		/// <summary>
-        /// The name of the database to edit
-        /// </summary>
-        private string _databaseName;
-
-        /// <summary>
-        /// The command to use to connect to the database
-        /// </summary>
-        private SqlCommand _command;
-
-        /// <summary>
-        /// The current connection to the database
-        /// </summary>
-        private SqlConnection _connection;
-
-        /// <summary>
-        /// The SMO object for scripting
-        /// </summary>
-        private Scripter _scripter;
-        
-        /// <summary>
-        /// The SMO object for connecting to the databas
-        /// </summary>
-        private Microsoft.SqlServer.Management.Smo.Database _database;
-        #endregion
-
-        #region Security Methods
-        /// <summary>
-        /// Makes sure that a name of a schema object does not contain any insecure characters.
-        /// </summary>
-        /// <param name="name">The name to check</param>
-        /// <exception cref="ArgumentException">If a parameter contains an invalid SQL character</exception>
-        /// <exception cref="ArgumentNullException">If the name is null</exception>
-		private static void AssertValidSqlName(string name)
-        {
-            if (name == null)
-                throw new ArgumentNullException ("name");
-            if (name.Length == 0 || name.IndexOfAny (_insecureSqlChars) >= 0)
-                throw new ArgumentException (String.Format (CultureInfo.CurrentCulture, Resources.InvalidSqlObjectName, name));
-        }
-
-        /// <summary>
-        /// Characters that could cause bad sql things to happen
-        /// </summary>
-        /// <remarks>
-        ///     -   can create a comment
-        ///     ;   can end a statement
-        ///     '   can end a string
-        ///     "   can end a string
-        /// </remarks>
-        private static readonly char[] _insecureSqlChars = new char[] { '-', ';', '\'' };
-        #endregion
-
-		#region Import Method
-		/// <summary>
-		/// Imports an existing database into the schema registry
-		/// </summary>
-		/// <param name="schemaGroup">The name of the schema group to script to</param>
-		public void Import (string schemaGroup)
-		{
-			using (TransactionScope transaction = new TransactionScope (TransactionScopeOption.Required, new TimeSpan ()))
-			{
-				// open the connection
-				OpenConnection ();
-
-				// make sure we have a schema registry
-				SchemaRegistry registry = new SchemaRegistry (_connection);
-
-				// get all of the objects in the current database
-				_command.CommandText = @"
-					SELECT o.name, o.type, p.name
-						FROM sys.objects o
-						LEFT JOIN sys.objects p ON (o.parent_object_id = p.object_id)
-						LEFT JOIN sys.default_constraints df ON (o.object_id = df.object_id)
-						WHERE o.is_ms_shipped = 0 
-							-- don't import anonymous defaults
-							AND (df.is_system_named IS NULL OR df.is_system_named = 0)
-							AND o.Name NOT LIKE '%Insight_SchemaRegistry%'
-					UNION
-					select i.name, 'IX', o.name
-						FROM sys.indexes i
-						JOIN sys.objects o ON (i.object_id = o.object_id)
-						WHERE o.is_ms_shipped = 0 AND i.type_desc <> 'HEAP' and is_primary_key = 0 and is_unique_constraint = 0";
-				using (SqlDataReader reader = _command.ExecuteReader ())
-				{
-					while (reader.Read ())
-					{
-						SchemaObjectType type;
-
-						string name = String.Format(CultureInfo.InvariantCulture, "[{0}]", reader.GetString(0));
-						string sqlType = reader.GetString (1);
-
-						switch (sqlType.Trim())
-						{
-							case "U":
-								type = SchemaObjectType.Table;
-								break;
-
-							case "P":
-								type = SchemaObjectType.StoredProcedure;
-								break;
-
-							case "V":
-								type = SchemaObjectType.View;
-								break;
-
-							case "FN":
-							case "TF":
-								type = SchemaObjectType.Function;
-								break;
-
-							case "D":
-							case "UQ":
-							case "C":
-								type = SchemaObjectType.Constraint;
-								name = String.Format(CultureInfo.InvariantCulture, "[{0}].[{1}]", reader.GetString(2), reader.GetString(0));
-								break;
-
-							case "PK":
-								type = SchemaObjectType.PrimaryKey;
-								name = String.Format(CultureInfo.InvariantCulture, "[{0}].[{1}]", reader.GetString(2), reader.GetString(0));
-								break;
-
-							case "F":
-								type = SchemaObjectType.ForeignKey;
-								name = String.Format(CultureInfo.InvariantCulture, "[{0}].[{1}]", reader.GetString(2), reader.GetString(0));
-								break;
-
-							case "IX":
-								type = SchemaObjectType.Index;
-								name = String.Format(CultureInfo.InvariantCulture, "[{0}].[{1}]", reader.GetString(2), reader.GetString(0));
-								break;
-
-							case "SQ":
-								// query notification, skip
-								continue;
-
-							default:
-								throw new InvalidOperationException(String.Format(CultureInfo.InvariantCulture, "Cannot import object {0} of type {1}", name, sqlType));
-						}
-
-						SchemaObject schemaObject = new SchemaObject (type, name, "");
-						registry.UpdateObject(schemaObject, schemaGroup, this, null);
-					}
-				}
-
-				registry.Update ();
-
-				transaction.Complete ();
-			}
+				if (!schemaObject.Verify(_connection))
+					throw new SchemaException(String.Format(CultureInfo.InvariantCulture, "Schema Object {0} was not in the database", schemaObject.Name));
 		}
 		#endregion
 
 		#region Event Handling
-		/// <summary>
-        /// Called when a table is being converted.
-        /// </summary>
-        /// <remarks>
-        ///     When the event is fired, the table data exists in the before table.
-        ///     If the event handler converts the data, return true.
-        ///     Return false to allow the installer to use the default conversion.
-        /// </remarks>
-        public event EventHandler<ConvertTableEventArgs> ConvertingTable;
-
-        /// <summary>
-        /// Called before a table is updated
-        /// </summary>
-        public event EventHandler<SchemaEventArgs> UpdatingTable;
-
-        /// <summary>
-        /// Called after a table is updated
-        /// </summary>
-        public event EventHandler<SchemaEventArgs> UpdatedTable;
-
         /// <summary>
         /// Called before a SchemaObject is created
         /// </summary>
@@ -1289,52 +847,67 @@ namespace Insight.Database.Schema
         /// Called before a SchemaObject is dropped
         /// </summary>
         public event EventHandler<SchemaEventArgs> DroppingObject;
+		#endregion
+
+        #region Internal Helper Methods
+		/// Get the objects in the order that they need to be created.
+		/// </summary>
+		/// <param name="schema">The schema to sort.</param>
+		/// <returns>The schema objects in the order that they need to be created.</returns>
+		private static List<SchemaObject> OrderSchemaObjects(SchemaObjectCollection schema)
+		{
+			// get the list of objects
+			List<SchemaObject> schemaObjects = schema.ToList();
+			for (int i = 0; i < schemaObjects.Count; i++)
+				schemaObjects[i].OriginalOrder = i;
+
+			// sort the list of objects in installation order
+			// first compare by type, then original order, then by name
+			schemaObjects.Sort(CompareByInstallOrder);
+
+			return schemaObjects;
+		}
 
 		/// <summary>
-		/// Called when an object is missing
+		/// Compares two registry entry objects to determine the appropriate installation order.
 		/// </summary>
-		public event EventHandler<SchemaEventArgs> MissingObject;
-		internal void OnMissingObject (object sender, SchemaEventArgs e)
+		/// <param name="e1">The first object to compare.</param>
+		/// <param name="e2">The second object to compere.</param>
+		/// <returns>The comparison result.</returns>
+		private static int CompareByInstallOrder(SchemaRegistryEntry e1, SchemaRegistryEntry e2)
 		{
-			if (MissingObject != null)
-				MissingObject (sender, e);
-		}
-        #endregion
+			int compare = e1.Type.CompareTo(e2.Type);
+			if (compare == 0)
+				compare = e1.OriginalOrder.CompareTo(e2.OriginalOrder);
+			if (compare == 0)
+				compare = String.Compare(e1.ObjectName, e2.ObjectName, StringComparison.OrdinalIgnoreCase);
 
-		public void Dispose()
-		{
-			if (_command != null)
-			{
-				_command.Dispose();
-				_command = null;
-			}
-			if (_connection != null)
-			{
-				_connection.Dispose();
-				_connection = null;
-			}
+			return compare;
 		}
+
+		/// <summary>
+		/// Compares two schema objects to determine the appropriate installation order.
+		/// </summary>
+		/// <param name="o1">The first object to compare.</param>
+		/// <param name="o2">The second object to compere.</param>
+		/// <returns>The comparison result.</returns>
+		private static int CompareByInstallOrder(SchemaObject o1, SchemaObject o2)
+		{
+			int compare = o1.SchemaObjectType.CompareTo(o2.SchemaObjectType);
+			if (compare == 0)
+				compare = o1.OriginalOrder.CompareTo(o2.OriginalOrder);
+			if (compare == 0)
+				compare = String.Compare(o1.Name, o2.Name, StringComparison.OrdinalIgnoreCase);
+			return compare;
+		}
+		#endregion
+
+		#region Private Members
+		/// <summary>
+		/// The current connection to the database
+		/// </summary>
+		private RecordingDbConnection _connection;
+		#endregion
 	}
     #endregion
-
-	/// <summary>
-	/// Determines how aggressively to rebuild the database
-	/// </summary>
-	public enum RebuildMode
-	{
-		/// <summary>
-		/// Only build if there are changes
-		/// </summary>
-		DetectChanges,
-
-		/// <summary>
-		/// Rebuild anything that can be safely updated without taking a long time
-		/// </summary>
-		RebuildSafe,
-
-		/// <summary>
-		/// Rebuild anything that can be rebuilt
-		/// </summary>
-		RebuildFull
-	}
 }

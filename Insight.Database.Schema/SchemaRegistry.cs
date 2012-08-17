@@ -3,9 +3,12 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Data.Common;
 using System.Data.SqlClient;
 using System.Globalization;
+using System.Linq;
 using System.Text;
+using Insight.Database;
 
 #endregion
 
@@ -14,119 +17,104 @@ namespace Insight.Database.Schema
     /// <summary>
     /// Manages the list of schema objects installed in the database.
     /// </summary>
-    class SchemaRegistry : IDisposable
+    class SchemaRegistry
     {
         #region Constructors
         /// <summary>
         /// Manages the signatures of objects in the schema database
         /// </summary>
         /// <param name="connection">The connection to the database</param>
-        public SchemaRegistry (SqlConnection connection)
+		/// <param name="schemaGroup">The name of the schema group to modify</param>
+        public SchemaRegistry (RecordingDbConnection connection, string schemaGroup)
         {
-            _connection = connection;
-            CreateTable ();
-            Load ();
-        }
+			SchemaGroup = schemaGroup;
+			Connection = connection;
+
+			// make sure we have a table to work with
+            EnsureSchemaTable();
+
+			// load in the entries from the database
+			Connection.DoNotLog(() =>
+			{
+				Entries = Connection.QuerySql<SchemaRegistryEntry>(String.Format(CultureInfo.InvariantCulture, "SELECT * FROM [{0}] WHERE SchemaGroup = @SchemaGroup", SchemaRegistryTableName), new { SchemaGroup = schemaGroup });
+			});
+		}
         #endregion
 
         #region Public Methods
-        /// <summary>
-        /// Determine if the database already contains a given object
-        /// </summary>
-        /// <param name="schemaObject">The schema object to look for</param>
-        /// <returns>True if the object is in the registry, false otherwise</returns>
-        public bool Contains (string objectName)
-        {
-            string select = String.Format (CultureInfo.InvariantCulture, "ObjectName = '{0}'", objectName);
-            if (RegistryTable.Select (select).Length > 0)
-                return true;
-            else
-                return false;
-        }
-
-        /// <summary>
-        /// Delete a schema object from the registry
-        /// </summary>
-        /// <param name="objectName">The name of the object</param>
-        public void DeleteObject (string objectName)
-        {
-            DataRow row = FindRow (objectName);
-            if (row != null)
-                row.Delete ();
-        }
-
-        /// <summary>
-        /// Get the signature of an object in the database
-        /// </summary>
-        /// <param name="objectName">Name of the object to find</param>
-        /// <returns>The signature of the object</returns>
-        public string GetSignature (string objectName)
-        {
-            DataRow row = FindRow (objectName);
-            return row["Signature"].ToString ();
-        }
-
-        /// <summary>
-        /// Get the type of an object in the database
-        /// </summary>
-        /// <param name="objectName">Name of the object to find</param>
-        /// <returns>The type of the object</returns>
-        public SchemaObjectType GetObjectType (string objectName)
-        {
-            DataRow row = FindRow (objectName);
-            return (SchemaObjectType)Enum.Parse (typeof (SchemaObjectType), row["Type"].ToString ());
-        }
+		/// <summary>
+		/// Finds an entry by name
+		/// </summary>
+		/// <param name="objectName">The name of the schema object.</param>
+		/// <returns>The schema entry or null if it can't be found.</returns>
+		public SchemaRegistryEntry Find(string objectName)
+		{
+			return Entries.FirstOrDefault(e => String.Compare(e.ObjectName, objectName, StringComparison.OrdinalIgnoreCase) == 0);
+		}
 
 		/// <summary>
-		/// Get the original order of an object in the database
+		/// Finds an entry by name
 		/// </summary>
-		/// <param name="objectName">Name of the object to find</param>
-		/// <returns>The type of the object</returns>
-		public int GetOriginalOrder(string objectName)
+		/// <param name="objectName">The name of the schema object.</param>
+		/// <returns>The schema entry or null if it can't be found.</returns>
+		public SchemaRegistryEntry Find(SchemaObject schemaObject)
 		{
-			DataRow row = FindRow(objectName);
-			object o = row["OriginalOrder"];
-			if (o == DBNull.Value)
-				return 0;
-			return Convert.ToInt32(o, CultureInfo.InvariantCulture);
+			return Find(schemaObject.Name);
+		}
+
+		/// <summary>
+		/// Determine if the database already contains a given object
+		/// </summary>
+		/// <param name="schemaObject">The schema object to look for</param>
+		/// <returns>True if the object is in the registry, false otherwise</returns>
+		public bool Contains(SchemaObject schemaObject)
+		{
+			return Find(schemaObject) != null;
 		}
 
         /// <summary>
-        /// Add or update an object in the schema registry
+        /// Update the schema registry with the new objects
         /// </summary>
         /// <param name="schemaObject">The object to update</param>
         /// <param name="schemaGroup">The name of the schema group</param>
-        public void UpdateObject (SchemaObject schemaObject, string schemaGroup, SchemaInstaller installer, IEnumerable<SchemaObject> objects)
-        {
-            DeleteObject (schemaObject.Name);
-            RegistryTable.Rows.Add (new object[] { schemaGroup, schemaObject.Name, schemaObject.GetSignature(installer, objects), schemaObject.SchemaObjectType.ToString (), schemaObject.OriginalOrder });
-        }
+		public void Update(IEnumerable<SchemaObject> objects)
+		{
+			// make an new list of entries
+			Entries = objects.Select(o =>
+				new SchemaRegistryEntry()
+				{
+					SchemaGroup = SchemaGroup,
+					ObjectName = o.Name,
+					Type = o.SchemaObjectType,
+					Signature = o.GetSignature(Connection, objects),
+					OriginalOrder = o.OriginalOrder
+				}).ToList();
 
-        /// <summary>
-        /// Returns a list of objects in the given schema group
-        /// </summary>
-        /// <param name="schemaGroup">The name of the group to return</param>
-        /// <returns>List of object names</returns>
-        public List<string> GetObjectNames (string schemaGroup)
-        {
-            string select = String.Format (CultureInfo.InvariantCulture, "SchemaGroup = '{0}'", schemaGroup);
+			Commit();
+		}
 
-            // go through the data list and return all of the items in the group
-            List<string> list = new List<string> ();
-            foreach (DataRow row in RegistryTable.Select (select))
-            {
-                list.Add (row["ObjectName"].ToString());
-            }
+		/// <summary>
+		/// Commit the data to the database.
+		/// </summary>
+		/// 
+		internal void Commit()
+		{
+			Connection.OnlyRecord(() =>
+			{
+				// delete all of the old records in the schema group
+				Connection.ExecuteSql(String.Format(CultureInfo.InvariantCulture, "DELETE FROM [{0}] WHERE SchemaGroup = '{1}'", SchemaRegistryTableName, SchemaGroup));
 
-            return list;
-        }
-
-        /// <summary>
-        /// Update the changed registry data
-        /// </summary>
-        public void Update ()
-        {
-            _adapter.Update (_registry);
+				// insert all of the new records
+				foreach (var entry in Entries)
+					Connection.ExecuteSql(String.Format(CultureInfo.InvariantCulture, "INSERT INTO [{0}] (SchemaGroup, ObjectName, Signature, Type, OriginalOrder) VALUES ('{1}', '{2}', '{3}', '{4}', '{5}')", 
+						SchemaRegistryTableName,
+						SchemaGroup,
+						entry.ObjectName,
+						entry.Signature,
+						entry.Type,
+						entry.OriginalOrder
+				));
+			});
         }
         #endregion
 
@@ -134,70 +122,21 @@ namespace Insight.Database.Schema
         /// <summary>
         /// Create the schema registry table in the database
         /// </summary>
-        private void CreateTable()
+		private void EnsureSchemaTable()
         {
-            // see if the schema registry table already exists
-            SqlCommand command = new SqlCommand ();
-            command.Connection = _connection;
-            command.CommandText = "SELECT COUNT (*) FROM sysobjects WHERE name = @TableName";
-            command.Parameters.AddWithValue ("@TableName", _schemaRegistryTableName);
-            int count = (int)command.ExecuteScalar ();
-			if (count == 0)
-			{
-				// create the schema registry table
-				command.CommandText = String.Format (CultureInfo.InvariantCulture, @"
-					CREATE TABLE [{0}]
-					(
-						[SchemaGroup] [varchar](64) NOT NULL,
-						[ObjectName] [varchar](256) NOT NULL,
-						[Signature] [varchar](28) NOT NULL,
-						[Type][varchar](32) NOT NULL,
-						[OriginalOrder] [int] DEFAULT (0)
-						CONSTRAINT PK_{0} PRIMARY KEY ([ObjectName])
-					)
-		           ", _schemaRegistryTableName);
-			}
-			else
-			{
-				// add in the new columns
-				command.CommandText = String.Format(CultureInfo.InvariantCulture, @"
-					IF NOT EXISTS (SELECT * FROM sys.syscolumns WHERE id = OBJECT_ID ('insight_schemaregistry') AND name = 'OriginalOrder') 
-						ALTER TABLE {0} ADD OriginalOrder [int]
-					", _schemaRegistryTableName); 
-			}
-
-			command.Parameters.Clear ();
-	        command.ExecuteNonQuery ();
-        }
-
-        /// <summary>
-        /// Load the registry data from the database
-        /// </summary>
-        private void Load ()
-        {
-            _adapter = new SqlDataAdapter (String.Format (CultureInfo.InvariantCulture, "SELECT * FROM {0}", _schemaRegistryTableName), _connection);
-            _registry = new DataSet ();
-            _registry.Locale = CultureInfo.InvariantCulture;
-            _adapter.Fill (_registry);
-
-			// use the command builder to fill in the other commands
-			// this seems to be necessary for some environments
-			SqlCommandBuilder builder = new SqlCommandBuilder(_adapter);
-			_adapter.InsertCommand = builder.GetInsertCommand();
-			_adapter.UpdateCommand = builder.GetUpdateCommand();
-			_adapter.DeleteCommand = builder.GetDeleteCommand();
-
-			RegistryTable.PrimaryKey = new DataColumn [] { RegistryTable.Columns ["ObjectName"] };
-        }
-
-        /// <summary>
-        /// Find a row containing an object
-        /// </summary>
-        /// <param name="objectName">The name of the object to find</param>
-        /// <returns>The row containing the object</returns>
-        private DataRow FindRow (string objectName)
-        {
-            return RegistryTable.Rows.Find (new object[] { objectName });
+			// create the table
+			Connection.ExecuteSql(String.Format (CultureInfo.InvariantCulture, 
+@"-- Make sure that the Insight_SchemaRegistry table exists
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE name = '{0}')
+CREATE TABLE [{0}]
+(
+	[SchemaGroup] [varchar](64) NOT NULL,
+	[ObjectName] [varchar](256) NOT NULL,
+	[Signature] [varchar](28) NOT NULL,
+	[Type][varchar](32) NOT NULL,
+	[OriginalOrder] [int] DEFAULT (0)
+	CONSTRAINT PK_{0} PRIMARY KEY ([ObjectName])
+)", SchemaRegistryTableName));
         }
         #endregion
 
@@ -205,42 +144,22 @@ namespace Insight.Database.Schema
         /// <summary>
         /// The name of the schema registry table
         /// </summary>
-        private const string _schemaRegistryTableName = "Insight_SchemaRegistry";
+        public const string SchemaRegistryTableName = "Insight_SchemaRegistry";
 
-        /// <summary>
-        /// The connection
-        /// </summary>
-        private SqlConnection _connection;
+		/// <summary>
+		/// The entries in the database.
+		/// </summary>
+		internal IList<SchemaRegistryEntry> Entries;
 
-        /// <summary>
-        /// The data adapter for synchronizing the registry data
-        /// </summary>
-        private SqlDataAdapter _adapter;
+		/// <summary>
+		/// The connection we are bound to.
+		/// </summary>
+		private RecordingDbConnection Connection;
 
-        /// <summary>
-        /// The data table in memory
-        /// </summary>
-        /// <value>The DataTable containing the registry records</value>
-        private DataTable RegistryTable { get { return _registry.Tables[0]; } }
-
-        /// <summary>
-        /// The schema registry
-        /// </summary>
-        private DataSet _registry;
+		/// <summary>
+		/// The name of the SchemaGroup we are bound to.
+		/// </summary>
+		private string SchemaGroup;
         #endregion
-
-		public void Dispose()
-		{
-			if (_registry != null)
-			{
-				_registry.Dispose();
-				_registry = null;
-			}
-			if (_registry != null)
-			{
-				_adapter.Dispose();
-				_adapter = null;
-			}
-		}
 	}
 }

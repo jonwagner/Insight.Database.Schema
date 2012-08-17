@@ -5,6 +5,7 @@ using System.Data.SqlClient;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using Insight.Database;
 
 namespace Insight.Database.Schema
 {
@@ -16,13 +17,13 @@ namespace Insight.Database.Schema
 		/// <summary>
 		/// The connection to use to connect to the database.
 		/// </summary>
-		private IDbInstallConnection _connection;
+		private IDbConnection _connection;
 
 		/// <summary>
 		/// Initializes an instance of a SqlColumnDefinitionProvider.
 		/// </summary>
 		/// <param name="connection">The connection to the database.</param>
-		public SqlColumnDefinitionProvider(IDbInstallConnection connection)
+		public SqlColumnDefinitionProvider(IDbConnection connection)
 		{
 			_connection = connection;
 		}
@@ -51,7 +52,7 @@ namespace Insight.Database.Schema
 					WHERE c.object_id = OBJECT_ID('{0}')
 				", tableName);
 
-			using (IDataReader reader = _connection.GetDataReader(schemaSql))
+			using (IDataReader reader = _connection.GetReaderSql(schemaSql))
 			{
 				while (reader.Read())
 				{
@@ -87,6 +88,11 @@ namespace Insight.Database.Schema
 						case "float":
 						case "real":
 							column.SqlType += String.Format(CultureInfo.InvariantCulture, "({0}, {1})", reader["precision"].ToString());
+							break;
+
+						case "rowversion":
+						case "timestamp":
+							column.IsReadOnly = true;
 							break;
 					}
 

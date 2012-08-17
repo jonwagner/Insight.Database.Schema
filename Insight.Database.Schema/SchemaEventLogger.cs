@@ -43,8 +43,6 @@ namespace Insight.Database.Schema
         public void Attach (SchemaInstaller installer)
         {
             installer.DroppingObject += _onSchemaChange;
-            installer.UpdatingTable += _onSchemaChange;
-            installer.UpdatedTable += _onSchemaChange;
             installer.CreatingObject += _onSchemaChange;
             installer.CreatedObject += _onSchemaChange;
         }
@@ -56,8 +54,6 @@ namespace Insight.Database.Schema
         public void Detach (SchemaInstaller installer)
         {
             installer.DroppingObject -= _onSchemaChange;
-            installer.UpdatingTable -= _onSchemaChange;
-            installer.UpdatedTable -= _onSchemaChange;
             installer.CreatingObject -= _onSchemaChange;
             installer.CreatedObject -= _onSchemaChange;
         }
