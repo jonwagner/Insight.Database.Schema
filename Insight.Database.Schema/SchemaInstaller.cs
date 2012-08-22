@@ -354,7 +354,7 @@ namespace Insight.Database.Schema
 		private void ScriptTableUpdate(SchemaObject schemaObject, List<SchemaObject> addObjects)
 		{
 			// detect the name of the table and replace it.
-			Regex createTableRegex = new Regex(@"CREATE\s+TABLE\s+[^\s]+", RegexOptions.IgnoreCase);
+			Regex createTableRegex = new Regex(String.Format(@"CREATE\s+TABLE\s+{0}", SqlParser.SqlNameExpression), RegexOptions.IgnoreCase);
 
 			// we don't yet support modifying tables with inline constraints and defaults, so throw here and tell the user
 //			Regex primaryKeyRegex = new Regex(@"(PRIMARY\s+KEY)|(CONSTRAINT)|(CHECK\s*\()|(DEFAULT\s*\()", RegexOptions.IgnoreCase);
