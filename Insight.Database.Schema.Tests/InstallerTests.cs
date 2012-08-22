@@ -71,7 +71,7 @@ namespace Insight.Database.Schema.Tests
 				@"CREATE FUNCTION [BeerTableFunc] () RETURNS @IDs TABLE (ID [int]) AS BEGIN INSERT INTO @IDs SELECT ID FROM BeerView RETURN END",
 
 				@"CREATE TABLE Keg ([ID] [int], [BeerID] [int])",
-				@"ALTER TABLE [Keg] ADD CONSTRAINT FK_Keg_Beer FOREIGN KEY ([BeerID]) REFERENCES Beer (ID)",
+				@"ALTER TABLE [Keg] ADD CONSTRAINT FK_Keg_Beer FOREIGN KEY ([BeerID]) REFERENCES Beer (ID) ON DELETE SET NULL ON UPDATE CASCADE",
 
 				@"-- AUTOPROC All [Beer]",
 			},

@@ -601,7 +601,7 @@ namespace Insight.Database.Schema
 
 			if (schemaObject.SchemaObjectType == SchemaObjectType.PrimaryKey)
 			{
-				foreignKeys = _connection.QuerySql(@"SELECT Name=f.name, TableName=o.name, RefTableName=ro.name
+				foreignKeys = _connection.QuerySql(@"SELECT Name=f.name, TableName=o.name, RefTableName=ro.name, DeleteAction=delete_referential_action_desc, UpdateAction=update_referential_action_desc
 					FROM sys.foreign_keys f
 					JOIN sys.key_constraints k ON (f.referenced_object_id = k.parent_object_id)
 					JOIN sys.objects o ON (f.parent_object_id = o.object_id)
@@ -611,7 +611,7 @@ namespace Insight.Database.Schema
 			}
 //			else
 //			{
-//				foreignKeys = _connection.QuerySql(@"SELECT Name=f.name, TableName=o.name, RefTableName=r.name
+			//				foreignKeys = _connection.QuerySql(@"SELECT Name=f.name, TableName=o.name, RefTableName=r.name, DeleteAction=delete_referential_action_desc, UpdateAction=update_referential_action_desc
 //					FROM sys.foreign_keys f
 //					JOIN sys.objects o ON (f.parent_object_id = o.object_id)
 //					JOIN sys.objects r ON (f.referenced_object_id = r.object_id)
@@ -636,7 +636,7 @@ namespace Insight.Database.Schema
 				sb.Append(String.Join(",", columns.Select((dynamic c) => SqlParser.FormatSqlName(c.FkColumnName))));
 				sb.AppendFormat(") REFERENCES {0} (", SqlParser.FormatSqlName(foreignKey.RefTableName));
 				sb.Append(String.Join(",", columns.Select((dynamic c) => SqlParser.FormatSqlName(c.PkColumnName))));
-				sb.Append(")");
+				sb.AppendFormat(") ON DELETE {0} ON UPDATE {1}", foreignKey.DeleteAction.Replace("_", " "), foreignKey.UpdateAction.Replace("_", " "));
 
 				var dropObject = new SchemaObject(sb.ToString());
 

@@ -249,7 +249,6 @@ namespace Insight.Database.Schema
 		private static readonly char[] _insecureSqlChars = new char[] { '-', ';', '\'' };
 		#endregion
 
-
 		#region Private Members
 		/// <summary>
 		/// The expression pattern to match
