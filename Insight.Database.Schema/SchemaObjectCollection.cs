@@ -195,6 +195,9 @@ namespace Insight.Database.Schema
 			// check for duplicate objects and invalid names
 			foreach (SchemaObject schemaObject in this)
 			{
+				if (schemaObject.SchemaObjectType == SchemaObjectType.Unused)
+					continue;
+
 				// validate the name
 				SqlParser.AssertValidSqlName(schemaObject.Name);
 

@@ -47,7 +47,8 @@ namespace Insight.Database.Schema
 			parsers.Add(new SqlParser(SchemaObjectType.Permission, String.Format(CultureInfo.InvariantCulture, @"GRANT\s+(?<permission>{0})\s+ON\s+(?<name>{0})\s+TO\s+(?<grantee>{0})", SqlNameExpression), "$1 ON $2 TO $3"));
 			parsers.Add(new SqlParser(SchemaObjectType.PrimaryKey, String.Format(CultureInfo.InvariantCulture, @"ALTER\s+TABLE\s+(?<tablename>{0})\s+(WITH\s+(NO)?CHECK\s+)?ADD\s+CONSTRAINT\s*\(?(?<name>{0})\)?\s+PRIMARY\s+", SqlNameExpression), "$1.$2"));
 			parsers.Add(new SqlParser(SchemaObjectType.ForeignKey, String.Format(CultureInfo.InvariantCulture, @"ALTER\s+TABLE\s+(?<tablename>{0})\s+(WITH\s+(NO)?CHECK\s+)?ADD\s+CONSTRAINT\s*\(?(?<name>{0})\)?\s+FOREIGN\s+KEY\s*\(?(?<name>{0})\)?", SqlNameExpression), "$1.$2"));
-			parsers.Add(new SqlParser(SchemaObjectType.Constraint, String.Format(CultureInfo.InvariantCulture, @"ALTER\s+TABLE\s+(?<tablename>{0})\s+(WITH\s+(NO)?CHECK\s+)?ADD\s+CONSTRAINT\s*\(?(?<name>{0})\)?", SqlNameExpression), "$1.$2"));
+			parsers.Add(new SqlParser(SchemaObjectType.Constraint, String.Format(CultureInfo.InvariantCulture, @"ALTER\s+TABLE\s+(?<tablename>{0})\s+(WITH\s+(NO)?CHECK\s+)?ADD\s+(((CHECK\s+)?CONSTRAINT)|(DEFAULT))\s*\(?(?<name>{0})\)?", SqlNameExpression), "$1.$2"));
+			parsers.Add(new SqlParser(SchemaObjectType.Constraint, String.Format(CultureInfo.InvariantCulture, @"ALTER\s+TABLE\s+(?<tablename>{0})\s+(WITH\s+(NO)?CHECK\s+)?(ADD\s+)?DEFAULT\s*\(?(?<name>{0})\)?", SqlNameExpression), "$1.$2"));
 			parsers.Add(new SqlParser(SchemaObjectType.Function, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+FUNCTION\s+(?<name>{0})", SqlNameExpression)));
 			parsers.Add(new SqlParser(SchemaObjectType.PrimaryXmlIndex, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+PRIMARY\s+XML\s+INDEX\s+(?<name>{0})\s+ON\s+(?<tablename>{0})", SqlNameExpression), "$2.$1"));
 			parsers.Add(new SqlParser(SchemaObjectType.SecondaryXmlIndex, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+XML\s+INDEX\s+(?<name>{0})\s+ON\s+(?<tablename>{0})", SqlNameExpression), "$2.$1"));
@@ -57,6 +58,12 @@ namespace Insight.Database.Schema
 			parsers.Add(new SqlParser(SchemaObjectType.Schema, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+SCHEMA\s+(?<name>{0})", SqlNameExpression), "SCHEMA $1"));
 			parsers.Add(new SqlParser(SchemaObjectType.Unused, String.Format(CultureInfo.InvariantCulture, @"SET\s+ANSI_NULLS", SqlNameExpression), null));
 			parsers.Add(new SqlParser(SchemaObjectType.Unused, String.Format(CultureInfo.InvariantCulture, @"SET\s+QUOTED_IDENTIFIER", SqlNameExpression), null));
+			parsers.Add(new SqlParser(SchemaObjectType.Unused, String.Format(CultureInfo.InvariantCulture, @"SET\s+ARITHABORT", SqlNameExpression), null));
+			parsers.Add(new SqlParser(SchemaObjectType.Unused, String.Format(CultureInfo.InvariantCulture, @"SET\s+CONCAT_NULL_YIELDS_NULL", SqlNameExpression), null));
+			parsers.Add(new SqlParser(SchemaObjectType.Unused, String.Format(CultureInfo.InvariantCulture, @"SET\s+ANSI_PADDING", SqlNameExpression), null));
+			parsers.Add(new SqlParser(SchemaObjectType.Unused, String.Format(CultureInfo.InvariantCulture, @"SET\s+ANSI_WARNINGS", SqlNameExpression), null));
+			parsers.Add(new SqlParser(SchemaObjectType.Unused, String.Format(CultureInfo.InvariantCulture, @"SET\s+NUMERIC_ROUNDABORT", SqlNameExpression), null));
+			parsers.Add(new SqlParser(SchemaObjectType.Unused, String.Format(CultureInfo.InvariantCulture, @"ALTER\s+TABLE\s+(?<tablename>{0})\s+(WITH\s+(NO)?CHECK\s+)?(?!ADD\s+)(((CHECK\s+)?CONSTRAINT)|(DEFAULT))\s*\(?(?<name>{0})\)?", SqlNameExpression), "$1.$2"));
 			parsers.Add(new SqlParser(SchemaObjectType.AutoProc, AutoProc.AutoProcRegex, "$0"));
 
 			// make sure that they are sorted in the order of likelihood
@@ -109,43 +116,49 @@ namespace Insight.Database.Schema
 			Match match = _regex.Match(sql);
 			if (match.Success)
 			{
-				// convert the name to the templated name
-				string name = match.Result(_nameTemplate);
-				string[] pieces;
-
-				switch (SchemaObjectType)
-				{
-					case SchemaObjectType.Service:
-					case SchemaObjectType.Queue:
-					case SchemaObjectType.Role:
-						pieces = name.Split(new char[] { ' ' }, 2, StringSplitOptions.RemoveEmptyEntries);
-						name = pieces[0] + " " + FormatSqlName(pieces[1]);
-						break;
-
-					case SchemaObjectType.Permission:
-					case SchemaObjectType.AutoProc:
-						break;
-
-					default:
-						// for most types, reformat the name to a fully qualified sql name
-						pieces = name.Split(_sqlNameDivider);
-						name = "";
-						for (int i = pieces.Length - _nameTemplate.Split(_sqlNameDivider).Length; i < pieces.Length; i++)
-						{
-							if (name.Length > 0)
-								name += ".";
-							name += FormatSqlName(pieces[i]);
-						}
-						break;
-				}
-
-				// return a match
-				return new SqlParserMatch()
-				{
+				SqlParserMatch parserMatch = new SqlParserMatch() 
+				{ 
 					SchemaObjectType = this.SchemaObjectType,
-					Name = name,
 					Position = match.Index
 				};
+
+				// for the unused crud, there is no additional parsing.
+				if (SchemaObjectType != Schema.SchemaObjectType.Unused)
+				{
+					string name = match.Result(_nameTemplate);
+					string[] pieces;
+
+					switch (SchemaObjectType)
+					{
+						case SchemaObjectType.Service:
+						case SchemaObjectType.Queue:
+						case SchemaObjectType.Role:
+							pieces = name.Split(new char[] { ' ' }, 2, StringSplitOptions.RemoveEmptyEntries);
+							name = pieces[0] + " " + FormatSqlName(pieces[1]);
+							break;
+
+						case SchemaObjectType.Permission:
+						case SchemaObjectType.AutoProc:
+							break;
+
+						default:
+							// for most types, reformat the name to a fully qualified sql name
+							pieces = name.Split(_sqlNameDivider);
+							name = "";
+							for (int i = pieces.Length - _nameTemplate.Split(_sqlNameDivider).Length; i < pieces.Length; i++)
+							{
+								if (name.Length > 0)
+									name += ".";
+								name += FormatSqlName(pieces[i]);
+							}
+							break;
+					}
+
+					// return a match
+					parserMatch.Name = name;
+				}
+
+				return parserMatch;
 			}
 
 			return null;

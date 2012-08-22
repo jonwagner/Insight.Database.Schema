@@ -120,9 +120,18 @@ namespace Insight.Database.Schema.Verifier
 						if (TypeFilter.HasValue && schema[i].SchemaObjectType != TypeFilter.Value)
 							continue;
 
-						// TODO: don't test modifying these yet. I know the dependencies don't work.
 						switch (schema[i].SchemaObjectType)
 						{
+							// Don't modify these. These have nothing to do with the installer.
+							case SchemaObjectType.UserPreScript:
+							case SchemaObjectType.Script:
+								break;
+
+							// These can't be modified if they are part of a table. It requires the table to be regenerated.
+							case SchemaObjectType.UserDefinedType:
+								break;
+
+							// TODO: don't test modifying these yet. I know the dependencies don't work.
 							case SchemaObjectType.PartitionFunction:
 							case SchemaObjectType.PartitionScheme:
 							case SchemaObjectType.MessageType:

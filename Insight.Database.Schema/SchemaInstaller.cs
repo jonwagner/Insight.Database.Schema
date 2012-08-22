@@ -189,8 +189,8 @@ namespace Insight.Database.Schema
 			// make sure the schema objects are valid
 			schema.Validate();
 
-			// get the list of objects to install
-			List<SchemaObject> schemaObjects = OrderSchemaObjects(schema);
+			// get the list of objects to install, filtering out the extra crud
+			List<SchemaObject> schemaObjects = OrderSchemaObjects(schema.Where (o => o.SchemaObjectType != SchemaObjectType.Unused));
 
 			using (TransactionScope transaction = new TransactionScope(TransactionScopeOption.Required, new TimeSpan(1, 0, 0, 0, 0)))
 			{
@@ -355,6 +355,8 @@ namespace Insight.Database.Schema
 		{
 			// detect the name of the table and replace it.
 			Regex createTableRegex = new Regex(String.Format(@"CREATE\s+TABLE\s+{0}", SqlParser.SqlNameExpression), RegexOptions.IgnoreCase);
+			Regex primaryKeyRegex = new Regex(String.Format(@"CONSTRAINT\s+{0}\s+PRIMARY\s+KEY", SqlParser.SqlNameExpression), RegexOptions.IgnoreCase);
+			Regex uniqueKeyRegex = new Regex(String.Format(@"CONSTRAINT\s+{0}\s+UNIQUE", SqlParser.SqlNameExpression), RegexOptions.IgnoreCase);
 
 			// we don't yet support modifying tables with inline constraints and defaults, so throw here and tell the user
 //			Regex primaryKeyRegex = new Regex(@"(PRIMARY\s+KEY)|(CONSTRAINT)|(CHECK\s*\()|(DEFAULT\s*\()", RegexOptions.IgnoreCase);
@@ -366,8 +368,13 @@ namespace Insight.Database.Schema
 
 			try
 			{
+				// TODO: support more than one unique constraint on a table
+
 				// make a temporary table so we can analyze the difference
-				string tempTable = createTableRegex.Replace(schemaObject.Sql, "CREATE TABLE " + newTableName);
+				string tempTable = schemaObject.Sql;
+				tempTable = createTableRegex.Replace(schemaObject.Sql, "CREATE TABLE " + newTableName);
+				tempTable = primaryKeyRegex.Replace(tempTable, "CONSTRAINT [PK_" + newTableName + "] PRIMARY KEY");
+				tempTable = uniqueKeyRegex.Replace(tempTable, "CONSTRAINT [UQ_" + newTableName + "] UNIQUE");
 				_connection.ExecuteSql(tempTable);
 
 				// get the columns for each of the tables
@@ -661,21 +668,25 @@ namespace Insight.Database.Schema
 			if (schemaObject.SchemaObjectType == SchemaObjectType.Index)
 			{
 				indexes = _connection.QuerySql(@"
-					SELECT Name=i.name, TableName=o.name, Type=i.type_desc, IsUnique=i.is_unique, IsConstraint=CONVERT(bit, CASE WHEN k.object_id IS NOT NULL THEN 1 ELSE 0 END), IsPrimaryKey=CONVERT(bit, CASE WHEN k.type_desc = 'PRIMARY_KEY_CONSTRAINT' THEN 1 ELSE 0 END)
+					SELECT Name=i.name, TableName=o.name, Type=i.type_desc, DataSpace=ISNULL(f.name, p.name), IsUnique=i.is_unique, IsConstraint=CONVERT(bit, CASE WHEN k.object_id IS NOT NULL THEN 1 ELSE 0 END), IsPrimaryKey=CONVERT(bit, CASE WHEN k.type_desc = 'PRIMARY_KEY_CONSTRAINT' THEN 1 ELSE 0 END)
 						FROM sys.indexes currentindex
 						JOIN sys.indexes i ON (currentindex.object_id = i.object_id AND currentindex.index_id <> i.index_id)
 						JOIN sys.objects o ON (i.object_id = o.object_id)
 						LEFT JOIN sys.key_constraints k ON (o.object_id = k.parent_object_id AND i.index_id = k.unique_index_id AND is_system_named = 0)
+						LEFT JOIN sys.filegroups f ON (i.data_space_id = f.data_space_id)
+						LEFT JOIN sys.partition_schemes p ON (i.data_space_id = p.data_space_id)
 						WHERE currentindex.name = @objectname AND currentIndex.type_desc = 'CLUSTERED' AND i.name IS NOT NULL",
 						new { ObjectName = SqlParser.UnformatSqlName(schemaObject.Name) });
 			}
 			else
 			{
 				indexes = _connection.QuerySql(@"
-					SELECT Name=i.name, TableName=o.name, Type=i.type_desc, IsUnique=i.is_unique, IsConstraint=CONVERT(bit, CASE WHEN k.object_id IS NOT NULL THEN 1 ELSE 0 END), IsPrimaryKey=CONVERT(bit, CASE WHEN k.type_desc = 'PRIMARY_KEY_CONSTRAINT' THEN 1 ELSE 0 END)
+					SELECT Name=i.name, TableName=o.name, Type=i.type_desc, DataSpace=ISNULL(f.name, p.name), IsUnique=i.is_unique, IsConstraint=CONVERT(bit, CASE WHEN k.object_id IS NOT NULL THEN 1 ELSE 0 END), IsPrimaryKey=CONVERT(bit, CASE WHEN k.type_desc = 'PRIMARY_KEY_CONSTRAINT' THEN 1 ELSE 0 END)
 						FROM sys.indexes i
 						JOIN sys.objects o ON (i.object_id = o.object_id)
 						LEFT JOIN sys.key_constraints k ON (o.object_id = k.parent_object_id AND i.index_id = k.unique_index_id AND is_system_named = 0)
+						LEFT JOIN sys.filegroups f ON (i.data_space_id = f.data_space_id)
+						LEFT JOIN sys.partition_schemes p ON (i.data_space_id = p.data_space_id)
 						WHERE o.object_id = OBJECT_ID(@ObjectName) AND i.Name IS NOT NULL
 						ORDER BY Type",
 						new { ObjectName = SqlParser.UnformatSqlName(schemaObject.Name) });
@@ -709,7 +720,7 @@ namespace Insight.Database.Schema
 						SqlParser.FormatSqlName(index.TableName));
 				}
 				sb.Append(String.Join(",", columns.Select((dynamic c) => SqlParser.FormatSqlName(c.ColumnName))));
-				sb.Append(")");
+				sb.AppendFormat(") ON {0}", SqlParser.FormatSqlName(index.DataSpace));
 
 				var dropObject = new SchemaObject(sb.ToString());
 
@@ -854,7 +865,7 @@ namespace Insight.Database.Schema
 		/// </summary>
 		/// <param name="schema">The schema to sort.</param>
 		/// <returns>The schema objects in the order that they need to be created.</returns>
-		private static List<SchemaObject> OrderSchemaObjects(SchemaObjectCollection schema)
+		private static List<SchemaObject> OrderSchemaObjects(IEnumerable<SchemaObject> schema)
 		{
 			// get the list of objects
 			List<SchemaObject> schemaObjects = schema.ToList();
