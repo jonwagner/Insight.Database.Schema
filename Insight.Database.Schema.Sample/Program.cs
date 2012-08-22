@@ -13,6 +13,9 @@ namespace Insight.Database.Schema.Sample
 		static void Main(string[] args)
 		{
 			SqlConnectionStringBuilder connectionString = new SqlConnectionStringBuilder("Database=.;Initial Catalog=InsightTest;Integrated Security=true");
+
+			SchemaInstaller.CreateDatabase(connectionString.ConnectionString);
+
 			using (SqlConnection connection = new SqlConnection(connectionString.ConnectionString))
 			{
 				connection.Open();
@@ -20,7 +23,6 @@ namespace Insight.Database.Schema.Sample
 				// make sure our database exists
 				SchemaInstaller installer = new SchemaInstaller(connection);
 				new SchemaEventConsoleLogger().Attach(installer);
-				SchemaInstaller.CreateDatabase(connection.ConnectionString);
 
 				// load the schema from the embedded resources in this project
 				SchemaObjectCollection schema = new SchemaObjectCollection();

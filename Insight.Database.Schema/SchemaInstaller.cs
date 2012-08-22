@@ -354,22 +354,16 @@ namespace Insight.Database.Schema
 		private void ScriptTableUpdate(SchemaObject schemaObject, List<SchemaObject> addObjects)
 		{
 			// detect the name of the table and replace it.
+			// TODO: support more than one unique constraint on a table
 			Regex createTableRegex = new Regex(String.Format(@"CREATE\s+TABLE\s+{0}", SqlParser.SqlNameExpression), RegexOptions.IgnoreCase);
 			Regex primaryKeyRegex = new Regex(String.Format(@"CONSTRAINT\s+{0}\s+PRIMARY\s+KEY", SqlParser.SqlNameExpression), RegexOptions.IgnoreCase);
 			Regex uniqueKeyRegex = new Regex(String.Format(@"CONSTRAINT\s+{0}\s+UNIQUE", SqlParser.SqlNameExpression), RegexOptions.IgnoreCase);
-
-			// we don't yet support modifying tables with inline constraints and defaults, so throw here and tell the user
-//			Regex primaryKeyRegex = new Regex(@"(PRIMARY\s+KEY)|(CONSTRAINT)|(CHECK\s*\()|(DEFAULT\s*\()", RegexOptions.IgnoreCase);
-//			if (primaryKeyRegex.IsMatch(schemaObject.Sql))
-			//				throw new ApplicationException(String.Format(CultureInfo.InvariantCulture, "Cannot modify {0} with an inline constraint or default. Move the constraint to a separate statement.", schemaObject.Name));
 
 			string oldTableName = schemaObject.Name;
 			string newTableName = "Insight__tmp_" + DateTime.Now.Ticks.ToString(CultureInfo.InvariantCulture);
 
 			try
 			{
-				// TODO: support more than one unique constraint on a table
-
 				// make a temporary table so we can analyze the difference
 				string tempTable = schemaObject.Sql;
 				tempTable = createTableRegex.Replace(schemaObject.Sql, "CREATE TABLE " + newTableName);
@@ -377,62 +371,87 @@ namespace Insight.Database.Schema
 				tempTable = uniqueKeyRegex.Replace(tempTable, "CONSTRAINT [UQ_" + newTableName + "] UNIQUE");
 				_connection.ExecuteSql(tempTable);
 
-				// get the columns for each of the tables
-				var oldColumns = GetColumnsForTable(oldTableName);
-				var newColumns = GetColumnsForTable(newTableName);
-
-				// delete old columns - this should be pretty free
-				var missingColumns = oldColumns.Where((dynamic o) => !newColumns.Any((dynamic n) => o.Name == n.Name));
-				if (missingColumns.Any())
-				{
-					StringBuilder sb = new StringBuilder();
-					sb.AppendLine("-- SCRIPT");
-					sb.AppendFormat("ALTER TABLE {0}", SqlParser.FormatSqlName(oldTableName));
-					sb.Append(" DROP");
-					sb.AppendLine(String.Join(",", missingColumns.Select((dynamic o) => String.Format(" COLUMN {0}", SqlParser.FormatSqlName(o.Name)))));
-					addObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
-				}
-
-				// add new columns - this is free when the columns are nullable
-				var addColumns = newColumns.Where((dynamic o) => !oldColumns.Any((dynamic n) => o.Name == n.Name));
-				if (addColumns.Any())
-				{
-					StringBuilder sb = new StringBuilder();
-					sb.AppendLine("-- SCRIPT");
-					sb.AppendFormat("ALTER TABLE {0}", SqlParser.FormatSqlName(oldTableName));
-					sb.Append(" ADD ");
-					sb.AppendLine(String.Join(", ", addColumns.Select((dynamic o) => GetColumnDefinition(o))));
-					addObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
-				}
-
-				// alter columns
-				foreach (dynamic oldColumn in oldColumns)
-				{
-					dynamic newColumn = newColumns.FirstOrDefault((dynamic n) => SqlParser.UnformatSqlName(n.Name) == SqlParser.UnformatSqlName(oldColumn.Name));
-					if (newColumn == null)
-						continue;
-
-					if (oldColumn.TypeName != newColumn.TypeName ||
-						oldColumn.MaxLength != newColumn.MaxLength ||
-						oldColumn.Precision != newColumn.Precision || 
-						oldColumn.Scale != newColumn.Scale ||
-						oldColumn.IsNullable != newColumn.IsNullable ||
-						oldColumn.IsIdentity != newColumn.IsIdentity ||
-						oldColumn.IdentitySeed != newColumn.IdentitySeed ||
-						oldColumn.IdentityIncrement != newColumn.IdentityIncrement)
-					{
-						StringBuilder sb = new StringBuilder();
-						sb.AppendLine("-- SCRIPT");
-						sb.AppendFormat("ALTER TABLE {0} ALTER COLUMN ", SqlParser.FormatSqlName(oldTableName));
-						sb.AppendFormat(GetColumnDefinition(newColumn));
-						addObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
-					}
-				}
+				// script constraints before columns because constraints depend on columns
+				ScriptColumns(addObjects, oldTableName, newTableName);
 			}
 			finally
 			{
 				// clean up the temporary table
 				_connection.ExecuteSql("DROP TABLE " + newTableName);
+			}
+		}
+
+		private void ScriptColumns(List<SchemaObject> addObjects, string oldTableName, string newTableName)
+		{
+			// get the columns for each of the tables
+			var oldColumns = GetColumnsForTable(oldTableName);
+			var newColumns = GetColumnsForTable(newTableName);
+
+			// delete old columns - this should be pretty free
+			var missingColumns = oldColumns.Where((dynamic o) => !newColumns.Any((dynamic n) => o.Name == n.Name));
+			if (missingColumns.Any())
+			{
+				StringBuilder sb = new StringBuilder();
+				sb.AppendLine("-- SCRIPT");
+				sb.AppendFormat("ALTER TABLE {0}", SqlParser.FormatSqlName(oldTableName));
+				sb.Append(" DROP");
+				sb.AppendLine(String.Join(",", missingColumns.Select((dynamic o) => String.Format(" COLUMN {0}", SqlParser.FormatSqlName(o.Name)))));
+				addObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
+			}
+
+			// add new columns - this is free when the columns are nullable
+			var addColumns = newColumns.Where((dynamic o) => !oldColumns.Any((dynamic n) => o.Name == n.Name));
+			if (addColumns.Any())
+			{
+				StringBuilder sb = new StringBuilder();
+				sb.AppendLine("-- SCRIPT");
+				sb.AppendFormat("ALTER TABLE {0}", SqlParser.FormatSqlName(oldTableName));
+				sb.Append(" ADD ");
+				sb.AppendLine(String.Join(", ", addColumns.Select((dynamic o) => GetColumnDefinition(o))));
+				addObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
+			}
+
+			// alter columns
+			foreach (dynamic oldColumn in oldColumns)
+			{
+				dynamic newColumn = newColumns.FirstOrDefault((dynamic n) => SqlParser.UnformatSqlName(n.Name) == SqlParser.UnformatSqlName(oldColumn.Name));
+				if (newColumn == null)
+					continue;
+
+				if (oldColumn.TypeName != newColumn.TypeName ||
+					oldColumn.MaxLength != newColumn.MaxLength ||
+					oldColumn.Precision != newColumn.Precision ||
+					oldColumn.Scale != newColumn.Scale ||
+					oldColumn.IsNullable != newColumn.IsNullable ||
+					oldColumn.IsIdentity != newColumn.IsIdentity ||
+					oldColumn.IdentitySeed != newColumn.IdentitySeed ||
+					oldColumn.IdentityIncrement != newColumn.IdentityIncrement)
+				{
+					StringBuilder sb = new StringBuilder();
+					sb.AppendLine("-- SCRIPT");
+					sb.AppendFormat("ALTER TABLE {0} ALTER COLUMN ", SqlParser.FormatSqlName(oldTableName));
+					sb.AppendFormat(GetColumnDefinition(newColumn));
+					addObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
+				}
+			}
+		}
+
+		private void ScriptConstraints(List<SchemaObject> addObjects, string oldTableName, string newTableName)
+		{
+			// go through all of the system-named constraints on the table
+			var oldConstraints = GetConstraintsForTable(oldTableName);
+			var newConstraints = GetConstraintsForTable(newTableName);
+
+			// delete old constraints
+			var missingConstraints = oldConstraints.Except(newConstraints, (dynamic c1, dynamic c2) => c1.Name == c2.Name);
+			if (missingConstraints.Any())
+			{
+				StringBuilder sb = new StringBuilder();
+				sb.AppendLine("-- SCRIPT");
+				sb.AppendFormat("ALTER TABLE {0}", SqlParser.FormatSqlName(oldTableName));
+				sb.Append(" DROP");
+				sb.AppendLine(String.Join(",", missingConstraints.Select((dynamic o) => String.Format(" CONSTRAINT {0}", SqlParser.FormatSqlName(o.Name)))));
+				addObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
 			}
 		}
 
@@ -443,11 +462,30 @@ namespace Insight.Database.Schema
 		/// <returns>The list of columns on the table.</returns>
 		private IEnumerable<FastExpando> GetColumnsForTable(string tableName)
 		{
-			return _connection.QuerySql(@"SELECT Name=c.name, TypeName = t.name, MaxLength=c.max_length, Precision=c.precision, scale=c.scale, IsNullable=c.is_nullable, IsIdentity=c.is_identity, IdentitySeed=i.seed_value, IdentityIncrement=i.increment_value
+			return _connection.QuerySql(@"SELECT Name=c.name, ColumnID=c.column_id, TypeName = t.name, MaxLength=c.max_length, Precision=c.precision, scale=c.scale, IsNullable=c.is_nullable, IsIdentity=c.is_identity, IdentitySeed=i.seed_value, IdentityIncrement=i.increment_value
 				FROM sys.columns c
 				JOIN sys.types t ON (c.system_type_id = t.system_type_id AND c.user_type_id = t.user_type_id)
 				LEFT JOIN sys.identity_columns i ON (c.object_id = i.object_id AND c.column_id = i.column_id)
 				WHERE c.object_id = OBJECT_ID (@TableName)",
+				new { TableName = tableName });
+		}
+
+		/// <summary>
+		/// Get the constraints for a table.
+		/// </summary>
+		/// <param name="tableName">The name of the table.</param>
+		/// <returns>The list of constraints  on the table.</returns>
+		private IEnumerable<FastExpando> GetConstraintsForTable(string tableName)
+		{
+			return _connection.QuerySql(@"
+				SELECT name=c.Name, ColumnID=c.parent_column_id, TypeName=c.type_desc, definition=c.definition FROM sys.default_constraints c WHERE parent_object_id = OBJECT_ID(@TableName)
+				UNION 
+				SELECT name=c.Name, ColumnID=c.parent_column_id, TypeName=c.type_desc, definition=c.definition FROM sys.check_constraints c WHERE parent_object_id = OBJECT_ID(@TableName)
+				UNION 
+				SELECT name=c.Name, ColumnID=NULL, TypeName=c.type_desc, definition=NULL FROM sys.key_constraints c WHERE parent_object_id = OBJECT_ID(@TableName)
+				UNION 
+				SELECT name=c.Name, ColumnID=NULL, TypeName=c.type_desc, definition=NULL FROM sys.foreign_keys c WHERE parent_object_id = OBJECT_ID(@TableName)
+				",
 				new { TableName = tableName });
 		}
 
@@ -540,10 +578,12 @@ namespace Insight.Database.Schema
 			// this will find things that use views or tables
 			// note that there will be more than one dependency if more than one column is referenced
 			// ignore USER_TABLE, since that is calculated columns
+			// for CHECK_CONSTRAINTS, ignore system-named constraints, since they are part of the table and will be handled there
 			var dependencies = _connection.QuerySql(@"SELECT DISTINCT Name = o.name, SqlType = o.type_desc, IsSchemaBound=d.is_schema_bound_reference
 				FROM sys.sql_expression_dependencies d
 				JOIN sys.objects o ON (d.referencing_id = o.object_id)
-				WHERE
+				LEFT JOIN sys.check_constraints c ON (o.object_id = c.object_id)
+				WHERE ISNULL(c.is_system_named, 0) = 0 AND
 					o.type_desc <> 'USER_TABLE' AND 
 					(o.parent_object_id = OBJECT_ID(@ObjectName) OR
 					d.referenced_id =
@@ -626,6 +666,8 @@ namespace Insight.Database.Schema
 //				new { ObjectName = SqlParser.IndexNameFromFullName(schemaObject.Name) });
 //			}
 
+			// TODO: handle cascades
+
 			foreach (dynamic foreignKey in foreignKeys)
 			{
 				// get the columns in the key from the database
@@ -665,30 +707,38 @@ namespace Insight.Database.Schema
 			// NOTE: order by type: do the clustered indexes first because they also drop nonclustered indexes if the object is a view (not a table)
 			IList<FastExpando> indexes = null;
 
+			bool isAzure = _connection.ExecuteScalarSql<bool>("SELECT CONVERT(bit, CASE WHEN SERVERPROPERTY('edition') = 'SQL Azure' THEN 1 ELSE 0 END)", Parameters.Empty);
+
 			if (schemaObject.SchemaObjectType == SchemaObjectType.Index)
 			{
-				indexes = _connection.QuerySql(@"
-					SELECT Name=i.name, TableName=o.name, Type=i.type_desc, DataSpace=ISNULL(f.name, p.name), IsUnique=i.is_unique, IsConstraint=CONVERT(bit, CASE WHEN k.object_id IS NOT NULL THEN 1 ELSE 0 END), IsPrimaryKey=CONVERT(bit, CASE WHEN k.type_desc = 'PRIMARY_KEY_CONSTRAINT' THEN 1 ELSE 0 END)
+				indexes = _connection.QuerySql(String.Format(@"
+					SELECT Name=i.name, TableName=o.name, Type=i.type_desc, IsUnique=i.is_unique, IsConstraint=CONVERT(bit, CASE WHEN k.object_id IS NOT NULL THEN 1 ELSE 0 END), IsPrimaryKey=CONVERT(bit, CASE WHEN k.type_desc = 'PRIMARY_KEY_CONSTRAINT' THEN 1 ELSE 0 END) {0}
 						FROM sys.indexes currentindex
 						JOIN sys.indexes i ON (currentindex.object_id = i.object_id AND currentindex.index_id <> i.index_id)
 						JOIN sys.objects o ON (i.object_id = o.object_id)
 						LEFT JOIN sys.key_constraints k ON (o.object_id = k.parent_object_id AND i.index_id = k.unique_index_id AND is_system_named = 0)
-						LEFT JOIN sys.filegroups f ON (i.data_space_id = f.data_space_id)
-						LEFT JOIN sys.partition_schemes p ON (i.data_space_id = p.data_space_id)
-						WHERE currentindex.name = @objectname AND currentIndex.type_desc = 'CLUSTERED' AND i.name IS NOT NULL",
+						{1}
+						WHERE currentindex.name = @objectname AND currentIndex.type_desc = 'CLUSTERED' AND i.name IS NOT NULL", 
+							isAzure ? ", DataSpace=NULL" : ", DataSpace=ISNULL(f.name, p.name)",
+							isAzure ? "" : @"LEFT JOIN sys.partition_schemes p ON (i.data_space_id = p.data_space_id)
+								LEFT JOIN sys.filegroups f ON (i.data_space_id = f.data_space_id)"
+						),
 						new { ObjectName = SqlParser.UnformatSqlName(schemaObject.Name) });
 			}
 			else
 			{
-				indexes = _connection.QuerySql(@"
-					SELECT Name=i.name, TableName=o.name, Type=i.type_desc, DataSpace=ISNULL(f.name, p.name), IsUnique=i.is_unique, IsConstraint=CONVERT(bit, CASE WHEN k.object_id IS NOT NULL THEN 1 ELSE 0 END), IsPrimaryKey=CONVERT(bit, CASE WHEN k.type_desc = 'PRIMARY_KEY_CONSTRAINT' THEN 1 ELSE 0 END)
+				indexes = _connection.QuerySql(String.Format(@"
+					SELECT Name=i.name, TableName=o.name, Type=i.type_desc, IsUnique=i.is_unique, IsConstraint=CONVERT(bit, CASE WHEN k.object_id IS NOT NULL THEN 1 ELSE 0 END), IsPrimaryKey=CONVERT(bit, CASE WHEN k.type_desc = 'PRIMARY_KEY_CONSTRAINT' THEN 1 ELSE 0 END) {0}
 						FROM sys.indexes i
 						JOIN sys.objects o ON (i.object_id = o.object_id)
 						LEFT JOIN sys.key_constraints k ON (o.object_id = k.parent_object_id AND i.index_id = k.unique_index_id AND is_system_named = 0)
-						LEFT JOIN sys.filegroups f ON (i.data_space_id = f.data_space_id)
-						LEFT JOIN sys.partition_schemes p ON (i.data_space_id = p.data_space_id)
+						{1}
 						WHERE o.object_id = OBJECT_ID(@ObjectName) AND i.Name IS NOT NULL
 						ORDER BY Type",
+							isAzure ? ", DataSpace=NULL" : ", DataSpace=ISNULL(f.name, p.name)",
+							isAzure ? "" : @"LEFT JOIN sys.partition_schemes p ON (i.data_space_id = p.data_space_id)
+								LEFT JOIN sys.filegroups f ON (i.data_space_id = f.data_space_id)"
+						),
 						new { ObjectName = SqlParser.UnformatSqlName(schemaObject.Name) });
 			}
 
@@ -720,7 +770,9 @@ namespace Insight.Database.Schema
 						SqlParser.FormatSqlName(index.TableName));
 				}
 				sb.Append(String.Join(",", columns.Select((dynamic c) => SqlParser.FormatSqlName(c.ColumnName))));
-				sb.AppendFormat(") ON {0}", SqlParser.FormatSqlName(index.DataSpace));
+				sb.Append(")");
+				if (index.DataSpace != null)
+					sb.AppendFormat(" ON {0}", SqlParser.FormatSqlName(index.DataSpace));
 
 				var dropObject = new SchemaObject(sb.ToString());
 

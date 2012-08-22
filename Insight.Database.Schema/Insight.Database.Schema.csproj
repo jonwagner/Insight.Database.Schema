@@ -36,8 +36,9 @@
     <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="Insight.Database">
-      <HintPath>..\packages\Insight.Database.1.2.8\lib\NET40\Insight.Database.dll</HintPath>
+    <Reference Include="Insight.Database, Version=1.2.9.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\packages\Insight.Database.1.2.9\lib\NET45\Insight.Database.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -50,6 +51,7 @@
     <Compile Include="AutoProc.cs" />
     <Compile Include="ColumnDefinition.cs" />
     <Compile Include="ConvertTableEventArgs.cs" />
+    <Compile Include="LambdaComparer.cs" />
     <Compile Include="SchemaException.cs" />
     <Compile Include="IColumnDefinitionProvider.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
