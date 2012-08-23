@@ -26,7 +26,7 @@ namespace Insight.Database.Schema
         /// <param name="sql">The SQL script for the SchemaObject</param>
         /// <remarks>The type and name must match the SQL script.</remarks>
         /// <exception cref="ArgumentNullException">If name or sql is null</exception>
-        public SchemaObject (SchemaObjectType type, string name, string sql)
+        internal SchemaObject (SchemaObjectType type, string name, string sql)
         {
             if (name == null) throw new ArgumentNullException ("name");
             if (sql == null) throw new ArgumentNullException ("sql");
@@ -465,6 +465,11 @@ namespace Insight.Database.Schema
 			// if we didn't get a match, then throw an exception
 			if (match == null)
 				throw new SchemaParsingException (Properties.Resources.CannotDetermineScriptType, _sql);
+
+            // if the sql contains something that we know that we don't support, then throw an exception
+            var invalid = SqlParser.UnsupportedSql.Select(p => p.Match(_sql)).Where(m => m != null).FirstOrDefault();
+            if (invalid != null)
+                throw new SchemaParsingException(String.Format(CultureInfo.InvariantCulture, "Error parsing Sql: {0}", invalid.Name), _sql);
 
 			// fill in the type and name
 			_type = match.SchemaObjectType;

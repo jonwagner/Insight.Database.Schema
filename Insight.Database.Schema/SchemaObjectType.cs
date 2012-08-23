@@ -182,6 +182,11 @@ namespace Insight.Database.Schema
 		/// A script object that just runs when it changes
 		/// </summary>
 		UserScript,
+
+        /// <summary>
+        /// An object that contains SQL that we don't support.
+        /// </summary>
+        Unsupported
     }
     #endregion
 }

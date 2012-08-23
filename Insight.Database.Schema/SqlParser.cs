@@ -23,7 +23,6 @@ namespace Insight.Database.Schema
 		static SqlParser()
 		{
 			List<SqlParser> parsers = new List<SqlParser>();
-
 			parsers.Add(new SqlParser(SchemaObjectType.IndexedView, String.Format(CultureInfo.InvariantCulture, @"--\s*INDEXEDVIEW.+CREATE\s+VIEW\s+(?<name>{0})", SqlNameExpression)));
 			parsers.Add(new SqlParser(SchemaObjectType.UserPreScript, String.Format(CultureInfo.InvariantCulture, @"--\s*PRESCRIPT\s+(?<name>{0})", SqlNameExpression)));
 			parsers.Add(new SqlParser(SchemaObjectType.UserScript, String.Format(CultureInfo.InvariantCulture, @"--\s*SCRIPT\s+(?<name>{0})", SqlNameExpression)));
@@ -68,11 +67,24 @@ namespace Insight.Database.Schema
 
 			// make sure that they are sorted in the order of likelihood
 			parsers.Sort((p1, p2) => p1.SchemaObjectType.CompareTo(p2.SchemaObjectType));
+			Parsers = new ReadOnlyCollection<SqlParser>(parsers);
 
-			Parsers = new ReadOnlyCollection<SqlParser>(parsers); 
+            // make a list of SQL that we do NOT support
+            List<SqlParser> unsupportedSql = new List<SqlParser>();
+            unsupportedSql.Add(new SqlParser(SchemaObjectType.Unsupported, String.Format(CultureInfo.InvariantCulture, @"ALTER\s+TABLE\s+(?<tablename>{0}).+ADD\s+(CONSTRAINT\s+)?((CHECK\s*\()|(DEFAULT\s*\()|(PRIMARY KEY)|(FOREIGN KEY))", SqlNameExpression), "$1 : Unnamed CONSTRAINTs are not supported"));
+            unsupportedSql.Add(new SqlParser(SchemaObjectType.Unsupported, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+TABLE\s+(?<tablename>{0}).+(CONSTRAINT\s+)?((CHECK\s*\()|(DEFAULT\s*\()|(PRIMARY KEY)|(FOREIGN KEY))", SqlNameExpression), "$1 : Unnamed inline CONSTRAINTs are not supported"));
+            UnsupportedSql = new ReadOnlyCollection<SqlParser>(unsupportedSql); 
 		}
 
+        /// <summary>
+        /// The parsers used to detect the type of SQL.
+        /// </summary>
 		internal static readonly ReadOnlyCollection<SqlParser> Parsers;
+
+        /// <summary>
+        /// The parsers used to detect SQL that we don't support.
+        /// </summary>
+        internal static readonly ReadOnlyCollection<SqlParser> UnsupportedSql;
 
 		/// <summary>
 		/// Matches a SQL name in the form [a].[b].[c], or "a"."b"."c" or a.b.c (or any combination)
