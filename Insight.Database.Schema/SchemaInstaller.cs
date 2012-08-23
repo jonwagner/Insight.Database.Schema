@@ -362,20 +362,23 @@ namespace Insight.Database.Schema
 		/// <param name="schemaObject">The object to update.</param>
 		private void ScriptTableUpdate(InstallContext context, SchemaObject schemaObject)
 		{
-
 			string oldTableName = schemaObject.Name;
 			string newTableName = InsightTemp + DateTime.Now.Ticks.ToString(CultureInfo.InvariantCulture);
 
 			try
 			{
 				// make a temporary table so we can analyze the difference
+				// note that we rename the table and its constraints so that we don't have conflicts when creating it
 				string tempTable = schemaObject.Sql;
 				tempTable = createTableRegex.Replace(tempTable, "CREATE TABLE " + newTableName);
-				tempTable = constraintRegex.Replace(tempTable, match =>
-					{
-						return "CONSTRAINT " + SqlParser.FormatSqlName(InsightTemp + SqlParser.UnformatSqlName(match.Groups[1].Value));
-					});
+				tempTable = constraintRegex.Replace(tempTable, match => "CONSTRAINT " + SqlParser.FormatSqlName(InsightTemp + SqlParser.UnformatSqlName(match.Groups[1].Value)));
 				_connection.ExecuteSql(tempTable);
+
+				// detect if the table was created on a different data space and throw
+				var oldDataSpace = _connection.ExecuteScalarSql<int>("SELECT data_space_id FROM sys.indexes i WHERE i.object_id = OBJECT_ID(@TableName) AND type <= 1", new { TableName = oldTableName });
+				var newDataSpace = _connection.ExecuteScalarSql<int>("SELECT data_space_id FROM sys.indexes i WHERE i.object_id = OBJECT_ID(@TableName) AND type <= 1", new { TableName = newTableName });
+				if (oldDataSpace != newDataSpace)
+					throw new SchemaException(String.Format(CultureInfo.InvariantCulture, "Cannot move table {0} to another filegroup or partition", oldTableName));
 
 				// script constraints before columns because constraints depend on columns
 				ScriptConstraints(context, oldTableName, newTableName);
@@ -416,7 +419,6 @@ namespace Insight.Database.Schema
 			if (missingColumns.Any())
 			{
 				StringBuilder sb = new StringBuilder();
-				sb.AppendLine("-- SCRIPT");
 				sb.AppendFormat("ALTER TABLE {0}", SqlParser.FormatSqlName(oldTableName));
 				sb.Append(" DROP");
 				sb.AppendLine(String.Join(",", missingColumns.Select((dynamic o) => String.Format(" COLUMN {0}", SqlParser.FormatSqlName(o.Name)))));
@@ -428,7 +430,6 @@ namespace Insight.Database.Schema
 			if (addColumns.Any())
 			{
 				StringBuilder sb = new StringBuilder();
-				sb.AppendLine("-- SCRIPT");
 				sb.AppendFormat("ALTER TABLE {0}", SqlParser.FormatSqlName(oldTableName));
 				sb.Append(" ADD ");
 				sb.AppendLine(String.Join(", ", addColumns.Select((dynamic o) => GetColumnDefinition(o))));
