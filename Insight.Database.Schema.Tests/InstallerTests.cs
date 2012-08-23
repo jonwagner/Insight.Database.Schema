@@ -267,68 +267,7 @@ namespace Insight.Database.Schema.Tests
 			});
 		}
 
-//        [Test]
-//        public void InlineConstraintsShouldBeDropped([ValueSource("ConnectionStrings")] string connectionString)
-//        {
-//            TestWithRollback(connectionString, connection =>
-//            {
-//                // try to install the schema and verify that they are there
-//                List<string> schema = new List<string>() 
-//                { 
-//                    @"CREATE TABLE Beer ([ID] [int] NOT NULL, Description [varchar](128), Name [varchar](128)
-//						DEFAULT ('foo'),
-//						CHECK (Description LIKE '%IPA%'),
-//						PRIMARY KEY NONCLUSTERED ([ID]),
-//						UNIQUE (Name)
-//					)"
-//                };
-//                Install(connection, schema);
-//                VerifyObjectsAndRegistry(schema, connection);
-
-//                // install the schema with named constraints
-//                schema = new List<string>() 
-//                { 
-//                    @"CREATE TABLE Beer ([ID] [int] NOT NULL, Description [varchar](128), Name [varchar](128)
-//						CONSTRAINT DF_Beer DEFAULT ('foo'),
-//						CONSTRAINT CK_Beer CHECK (Description LIKE '%IPA%'),
-//						CONSTRAINT PK_Beer PRIMARY KEY NONCLUSTERED ([ID]),
-//						CONSTRAINT UQ_Beer UNIQUE (Name)
-//					)"
-//                };
-//                Install(connection, schema);
-
-//                // install the schema with no constraints
-//                schema = new List<string>() { @"CREATE TABLE Beer ([ID] [int] NOT NULL, Description [varchar](128), Name [varchar](128))" };
-//                Install(connection, schema);
-//                VerifyObjectsAndRegistry(schema, connection);
-//            });
-//        }	
-
-		//[Test]
-		//public void ShouldThrowExceptionOnModifyInlineConstraint([ValueSource("ConnectionStrings")] string connectionString,
-		//	[Values(
-		//		@"CREATE TABLE Beer ([ID] [int] NOT NULL, Description [varchar](128) CHECK (Description LIKE '%IPA%'))",
-		//		@"CREATE TABLE Beer ([ID] [int] NOT NULL, Description [varchar](128) PRIMARY KEY ([ID]))",
-		//		@"CREATE TABLE Beer ([ID] [int] NOT NULL, Description [varchar](128) DEFAULT ('foo'))"
-		//	)] string table)
-		//{
-		//	TestWithRollback(connectionString, connection =>
-		//	{
-		//		// try to install the schema and verify that they are there
-		//		List<string> schema = new List<string>() { table };
-		//		Install(connection, schema);
-		//		VerifyObjectsAndRegistry(schema, connection);
-
-		//		schema = new List<string>() { @"CREATE TABLE Beer ([ID] [int] NOT NULL, Description [varchar](128))" };
-		//		Install(connection, schema);
-
-		//		// try to install the schema and verify that they are there
-		//		schema = new List<string>() { table + " -- MODIFIED" };
-		//		Assert.Throws<ApplicationException>(() => Install(connection, schema));
-		//	});
-		//}
-
-		#region Default Tests
+		#region Column Default Tests
 		/// <summary>
 		/// This is the set of schemas that we want to convert between. The test case tries all permutations of migrating from one to the other.
 		/// </summary>
@@ -358,10 +297,6 @@ namespace Insight.Database.Schema.Tests
 			new string [] { @"CREATE TABLE Beer ([ID] [int], [Description][varchar](256))", @"ALTER TABLE Beer ADD DEFAULT (1) FOR [ID]", @"ALTER TABLE Beer ADD DEFAULT 'Moo' FOR [Description]" },
 		};
 
-
-		static int i = 0;
-
-
 		/// <summary>
 		/// Test migrating from all different forms of defaults.
 		/// </summary>
@@ -374,8 +309,6 @@ namespace Insight.Database.Schema.Tests
 			[ValueSource("_defaultSchemas")] IEnumerable<string> finalSchema
 			)
 		{
-			if (++i != 3) return;
-
 			TestWithRollback(connectionString, connection =>
 			{
 				// set up the initial schema
