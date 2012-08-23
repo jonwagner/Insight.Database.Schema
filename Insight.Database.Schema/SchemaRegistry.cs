@@ -8,6 +8,7 @@ using System.Data.SqlClient;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using Insight.Database;
 
 #endregion
@@ -37,8 +38,16 @@ namespace Insight.Database.Schema
 			Connection.DoNotLog(() =>
 			{
 				Entries = Connection.QuerySql<SchemaRegistryEntry>(String.Format(CultureInfo.InvariantCulture, "SELECT * FROM [{0}] WHERE SchemaGroup = @SchemaGroup", SchemaRegistryTableName), new { SchemaGroup = schemaGroup });
+
+				// automatically handle the old format for entries
+				// WAS: [ROLE foo]
+				// NOW: ROLE [foo]
+				foreach (var entry in Entries)
+					entry.ObjectName = _registryUpgradeRegex.Replace(entry.ObjectName, "$1 [");
 			});
 		}
+
+		private static readonly Regex _registryUpgradeRegex = new Regex(@"\[((ROLE)|(QUEUE)|(SERVICE))\s*", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         #endregion
 
         #region Public Methods
