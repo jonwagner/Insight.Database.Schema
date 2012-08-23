@@ -14,11 +14,7 @@ namespace Insight.Database.Schema
     public enum SchemaEventType
     {
         BeforeDrop,
-        BeforeTableUpdate,
-        AfterTableUpdate,
         BeforeCreate,
         AfterCreate,
-        ConvertTable,
-		MissingObject
     }
 }

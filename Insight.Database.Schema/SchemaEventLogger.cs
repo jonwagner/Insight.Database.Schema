@@ -88,12 +88,6 @@ namespace Insight.Database.Schema
                 case SchemaEventType.BeforeDrop:
                     eventName = Resources.Dropping;
                     break;
-                case SchemaEventType.BeforeTableUpdate:
-                    eventName = Resources.Updating;
-                    break;
-                case SchemaEventType.AfterTableUpdate:
-                    eventName = Resources.Updated;
-                    break;
                 case SchemaEventType.BeforeCreate:
                     eventName = Resources.Creating;
                     break;

@@ -75,12 +75,6 @@ namespace Insight.Database.Schema
         private string _name;
 
         /// <summary>
-        /// The name without formatting pieces
-        /// </summary>
-        /// <value></value>
-        internal string UnformattedName { get { return SqlParser.UnformatSqlName (_name); } }
-
-        /// <summary>
         /// The type of the SchemaObject
         /// </summary>
         /// <value>The type of the SchemaObject</value>
@@ -121,181 +115,193 @@ namespace Insight.Database.Schema
         {
 			string sql = Sql;
 
+            // for auto-procs, convert the comment into a list of stored procedures
 			if (SchemaObjectType == Schema.SchemaObjectType.AutoProc)
 				sql = new AutoProc(Name, new SqlColumnDefinitionProvider(connection), objects).Sql;
 
-			if (sql.Length > 0)
-            {
-				try
-				{
-					foreach (string s in _goSplit.Split(sql).Where(piece => !String.IsNullOrWhiteSpace(piece)))
-						connection.ExecuteSql(s);
-				}
-				catch (Exception e)
-				{
-					throw new InvalidOperationException(String.Format(CultureInfo.InvariantCulture, "Cannot create SQL object {0}: {1}", Name, e.Message), e);
-				}
-            }
+            if (sql.Length == 0)
+                return;
+
+			try
+			{
+				foreach (string s in _goSplit.Split(sql).Where(piece => !String.IsNullOrWhiteSpace(piece)))
+					connection.ExecuteSql(s);
+			}
+			catch (Exception e)
+			{
+				throw new InvalidOperationException(String.Format(CultureInfo.InvariantCulture, "Cannot create SQL object {0}: {1}", Name, e.Message), e);
+			}
         }
+
+        /// <summary>
+        /// Determines how to split a GO statement in a batch.
+        /// </summary>
 		private static Regex _goSplit = new Regex (@"^\s*GO\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.Multiline);
 
+        /// <summary>
+        /// Verify that the object exists in the database.
+        /// </summary>
+        /// <param name="connection">The connection to query.</param>
+        /// <returns>True if the object exists, false if it doesn't.</returns>
 		internal bool Verify(RecordingDbConnection connection)
 		{
 			return connection.DoNotLog(() => {
-            IDbCommand command = connection.CreateCommand();
 
-			switch (SchemaObjectType)
-			{
-				default:
-				case SchemaObjectType.UserPreScript:
-				case SchemaObjectType.Unused:
-				case SchemaObjectType.Script:
-				case SchemaObjectType.UserScript:
-					return true;
+                string command;
 
-				case SchemaObjectType.Permission:
-					Match m = Regex.Match(_name, String.Format(CultureInfo.InvariantCulture, @"(?<permission>\w+)\s+ON\s+(?<object>{0})\s+TO\s+(?<user>{0})", SqlParser.SqlNameExpression));
+			    switch (SchemaObjectType)
+			    {
+				    default:
+				    case SchemaObjectType.UserPreScript:
+				    case SchemaObjectType.Unused:
+				    case SchemaObjectType.Script:
+				    case SchemaObjectType.UserScript:
+                        // we can't check these
+					    return true;
 
-					var permissions = connection.QuerySql<string>(@"SELECT p.permission_name 
-							FROM sys.database_principals u
-							JOIN sys.database_permissions p ON (u.principal_id = p.grantee_principal_id)
-							LEFT JOIN sys.objects o ON (p.class_desc = 'OBJECT_OR_COLUMN' AND p.major_id = o.object_id)
-							LEFT JOIN sys.types t ON (p.class_desc = 'TYPE' AND p.major_id = t.user_type_id)
-							WHERE u.name = @UserName AND ISNULL(o.name, t.name) = @ObjectName",
-							new 
-							{ 
-								UserName = SqlParser.UnformatSqlName(m.Groups["user"].Value),
-								ObjectName = SqlParser.UnformatSqlName(SqlParser.IndexNameFromFullName(m.Groups["object"].Value))
-							});
+				    case SchemaObjectType.Permission:
+                        // check permissions by querying the permissions table
+					    Match m = Regex.Match(_name, String.Format(CultureInfo.InvariantCulture, @"(?<permission>\w+)\s+ON\s+(?<object>{0})\s+TO\s+(?<user>{0})", SqlParser.SqlNameExpression));
 
-					string permission = m.Groups["permission"].Value.ToUpperInvariant();
-					switch (permission)
-					{
-						case "EXEC":
-							return permissions.Contains("EXECUTE");
+					    var permissions = connection.QuerySql<string>(@"SELECT p.permission_name 
+							    FROM sys.database_principals u
+							    JOIN sys.database_permissions p ON (u.principal_id = p.grantee_principal_id)
+							    LEFT JOIN sys.objects o ON (p.class_desc = 'OBJECT_OR_COLUMN' AND p.major_id = o.object_id)
+							    LEFT JOIN sys.types t ON (p.class_desc = 'TYPE' AND p.major_id = t.user_type_id)
+							    WHERE u.name = @UserName AND ISNULL(o.name, t.name) = @ObjectName",
+							    new 
+							    { 
+								    UserName = SqlParser.UnformatSqlName(m.Groups["user"].Value),
+								    ObjectName = SqlParser.UnformatSqlName(SqlParser.IndexNameFromFullName(m.Groups["object"].Value))
+							    });
 
-						case "ALL":
-							return permissions.Any();
-					}
+					    string permission = m.Groups["permission"].Value.ToUpperInvariant();
+					    switch (permission)
+					    {
+						    case "EXEC":
+							    return permissions.Contains("EXECUTE");
 
-					if (!permissions.Contains(permission))
-						Console.WriteLine("foo");
+						    case "ALL":
+							    return permissions.Any();
+					    }
+
+					    if (!permissions.Contains(permission))
+						    Console.WriteLine("foo");
 
 
-					return permissions.Contains(permission);
+					    return permissions.Contains(permission);
 
-				case SchemaObjectType.Role:
-					command.CommandText = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.database_principals WHERE name = '{0}' AND type = 'R'", SqlParser.UnformatSqlName(Regex.Match(Name, @"ROLE (?<name>.*)").Groups["name"].Value));
-					break;
+				    case SchemaObjectType.Role:
+					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.database_principals WHERE name = '{0}' AND type = 'R'", SqlParser.UnformatSqlName(Regex.Match(Name, @"ROLE (?<name>.*)").Groups["name"].Value));
+					    break;
 
-				case SchemaObjectType.User:
-					command.CommandText = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.database_principals WHERE name = '{0}' AND type = 'U'", SqlParser.UnformatSqlName(Name));
-					break;
+				    case SchemaObjectType.User:
+					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.database_principals WHERE name = '{0}' AND type = 'U'", SqlParser.UnformatSqlName(Name));
+					    break;
 
-				case SchemaObjectType.Login:
-					command.CommandText = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.server_principals WHERE name = '{0}' AND (type = 'U' OR type = 'S')", SqlParser.UnformatSqlName(Name));
-					break;
+				    case SchemaObjectType.Login:
+					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.server_principals WHERE name = '{0}' AND (type = 'U' OR type = 'S')", SqlParser.UnformatSqlName(Name));
+					    break;
 
-				case SchemaObjectType.Schema:
-					command.CommandText = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.schemas WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					break;
+				    case SchemaObjectType.Schema:
+					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.schemas WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
+					    break;
 
-				case SchemaObjectType.Certificate:
-					command.CommandText = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.certificates WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					break;
+				    case SchemaObjectType.Certificate:
+					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.certificates WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
+					    break;
 
-				case SchemaObjectType.MasterKey:
-					command.CommandText = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.symmetric_keys WHERE name = '{0}'", "##MS_DatabaseMasterKey##");
-					break;
+				    case SchemaObjectType.MasterKey:
+					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.symmetric_keys WHERE name = '{0}'", "##MS_DatabaseMasterKey##");
+					    break;
 
-				case SchemaObjectType.SymmetricKey:
-					command.CommandText = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.symmetric_keys WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					break;
+				    case SchemaObjectType.SymmetricKey:
+					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.symmetric_keys WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
+					    break;
 
-				case SchemaObjectType.Service:
-					command.CommandText = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.services WHERE name = '{0}'", SqlParser.UnformatSqlName(Regex.Match(Name, @"SERVICE (?<name>.*)").Groups["name"].Value));
-					break;
+				    case SchemaObjectType.Service:
+					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.services WHERE name = '{0}'", SqlParser.UnformatSqlName(Regex.Match(Name, @"SERVICE (?<name>.*)").Groups["name"].Value));
+					    break;
 
-				case SchemaObjectType.Queue:
-					command.CommandText = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.service_queues WHERE name = '{0}'", SqlParser.UnformatSqlName(Regex.Match(Name, @"QUEUE (?<name>.*)").Groups["name"].Value));
-					break;
+				    case SchemaObjectType.Queue:
+					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.service_queues WHERE name = '{0}'", SqlParser.UnformatSqlName(Regex.Match(Name, @"QUEUE (?<name>.*)").Groups["name"].Value));
+					    break;
 
-				case SchemaObjectType.UserDefinedType:
-					command.CommandText = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.types WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					break;
+				    case SchemaObjectType.UserDefinedType:
+					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.types WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
+					    break;
 
-				case SchemaObjectType.PartitionFunction:
-					command.CommandText = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.partition_functions WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					break;
+				    case SchemaObjectType.PartitionFunction:
+					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.partition_functions WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
+					    break;
 
-				case SchemaObjectType.PartitionScheme:
-					command.CommandText = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.partition_schemes WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					break;
+				    case SchemaObjectType.PartitionScheme:
+					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.partition_schemes WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
+					    break;
 
-				case SchemaObjectType.Table:
-					command.CommandText = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.tables WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					break;
+				    case SchemaObjectType.Table:
+					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.tables WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
+					    break;
 
-				case SchemaObjectType.IndexedView:
-				case SchemaObjectType.View:
-					command.CommandText = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.views WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					break;
+				    case SchemaObjectType.IndexedView:
+				    case SchemaObjectType.View:
+					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.views WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
+					    break;
 
-				case SchemaObjectType.AutoProc:
-					return new AutoProc(Name, null, null).GetProcs().All(tuple =>
-					{
-						int count;
-						switch (tuple.Item1)
-						{
-							case AutoProc.ProcTypes.Table:
-							case AutoProc.ProcTypes.IdTable:
-								count = connection.ExecuteScalarSql<int>("SELECT COUNT (*) FROM sys.types WHERE name = @ProcName", new { ProcName = SqlParser.UnformatSqlName(tuple.Item2) });
-								break;
+				    case SchemaObjectType.AutoProc:
+					    return new AutoProc(Name, null, null).GetProcs().All(tuple =>
+					    {
+						    int count;
+						    switch (tuple.Item1)
+						    {
+							    case AutoProc.ProcTypes.Table:
+							    case AutoProc.ProcTypes.IdTable:
+								    count = connection.ExecuteScalarSql<int>("SELECT COUNT (*) FROM sys.types WHERE name = @ProcName", new { ProcName = SqlParser.UnformatSqlName(tuple.Item2) });
+								    break;
 
-							default:
-								count = connection.ExecuteScalarSql<int>("SELECT COUNT (*) FROM sys.objects WHERE name = @ProcName", new { ProcName = SqlParser.UnformatSqlName(tuple.Item2) });
-								break;
-						}
-						return count > 0;
-					});
+							    default:
+								    count = connection.ExecuteScalarSql<int>("SELECT COUNT (*) FROM sys.objects WHERE name = @ProcName", new { ProcName = SqlParser.UnformatSqlName(tuple.Item2) });
+								    break;
+						    }
+						    return count > 0;
+					    });
 
-				case SchemaObjectType.StoredProcedure:
-					command.CommandText = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.procedures WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					break;
+				    case SchemaObjectType.StoredProcedure:
+					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.procedures WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
+					    break;
 
-				case SchemaObjectType.PrimaryKey:
-				case SchemaObjectType.Index:
-				case SchemaObjectType.PrimaryXmlIndex:
-				case SchemaObjectType.SecondaryXmlIndex:
-					command.CommandText = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.indexes WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					break;
+				    case SchemaObjectType.PrimaryKey:
+				    case SchemaObjectType.Index:
+				    case SchemaObjectType.PrimaryXmlIndex:
+				    case SchemaObjectType.SecondaryXmlIndex:
+					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.indexes WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
+					    break;
 
-				case SchemaObjectType.Trigger:
-					command.CommandText = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.triggers WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					break;
+				    case SchemaObjectType.Trigger:
+					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.triggers WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
+					    break;
 
-				case SchemaObjectType.ForeignKey:
-				case SchemaObjectType.Constraint:
-				case SchemaObjectType.Function:
-					command.CommandText = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.objects WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					break;
+				    case SchemaObjectType.ForeignKey:
+				    case SchemaObjectType.Constraint:
+				    case SchemaObjectType.Function:
+					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.objects WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
+					    break;
 
-				case SchemaObjectType.MessageType:
-					command.CommandText = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.service_message_types WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					break;
+				    case SchemaObjectType.MessageType:
+					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.service_message_types WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
+					    break;
 
-				case SchemaObjectType.Contract:
-					command.CommandText = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.service_contracts WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					break;
+				    case SchemaObjectType.Contract:
+					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.service_contracts WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
+					    break;
 
-				case SchemaObjectType.BrokerPriority:
-					command.CommandText = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.conversation_priorities WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					break;
-			}
+				    case SchemaObjectType.BrokerPriority:
+					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.conversation_priorities WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
+					    break;
+			    }
 
-			// execute the query
-			return (int)command.ExecuteScalar() > 0;
-
+			    // execute the query
+			    return (int)connection.ExecuteScalarSql<int>(command) > 0;
 			});
 		}
 
