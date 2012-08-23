@@ -38,7 +38,6 @@ namespace Insight.Database.Schema.Tests
         /// <param name="sql">The sql to check.</param>
         [Test]
         public void TestUnsupportedSql([Values(
-            "ALTER TABLE Foo ADD DEFAULT (0) FOR Col",          // unnamed explicit defaults
             "ALTER TABLE Foo ADD CONSTRAINT CHECK (id > 0)",    // unnamed explicit check constraints
             "CREATE TABLE Foo (id int, CHECK (id > 0))",        // unnamed inline check constraints
             "ALTER TABLE Foo ADD PRIMARY KEY (ID)",             // unnamed explicit primary key
