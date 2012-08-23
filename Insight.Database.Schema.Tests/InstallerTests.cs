@@ -216,56 +216,72 @@ namespace Insight.Database.Schema.Tests
 		}
 		#endregion
 
+		#region Table Modify With Dependencies Test
+		/// <summary>
+		/// This is the set of schemas that we want to convert between. The test case tries all permutations of migrating from one to the other.
+		/// </summary>
+		private static List<string> _tableModifySchemas = new List<string> ()
+		{
+			// add columns of various types
+			"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](256))",
+			"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](256), [OriginalGravity][decimal](18,4) NOT NULL)",
+			"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](256), [OriginalGravity][decimal](18,4) NOT NULL, [Stuff][xml] NULL)",
+			"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](256), [OriginalGravity][decimal](18,4) NOT NULL, [Stuff][xml] NULL, [ChangeDate][rowversion])",
+
+			// drop columns and add them at the same time
+			// test identity creation
+			"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](256), [NewID] [int] IDENTITY (10, 10))",
+
+			// modify some types
+			"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](256), [ModifyDecimal] [decimal](18, 0) NOT NULL)",
+			"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](256), [ModifyDecimal] [decimal](18, 0) NULL)",
+			"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](256), [ModifyDecimal] [decimal](18, 2) NULL)",
+			"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](256), [ModifyString] [varchar](32))",
+			"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](256), [ModifyString] [varchar](MAX))",
+
+			// add a computed column
+			"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](256), [OneMore] AS ID+1)",
+			"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](256), [OneMore] AS ID+2)",
+		};
+
+		private static List<string> _tableAdditionalSchema = new List<string>()
+		{
+			@"ALTER TABLE [Beer] ADD CONSTRAINT PK_Beer PRIMARY KEY ([ID])",
+			@"ALTER TABLE [Beer] ADD CONSTRAINT CK_BeerTable CHECK (ID > 0)",
+			@"ALTER TABLE [Beer] ADD CONSTRAINT CK_BeerColumn CHECK (ID > 5)",
+			@"ALTER TABLE [Beer] ADD CONSTRAINT DF_Beer_Description DEFAULT 'IPA' FOR Description",
+			@"CREATE VIEW BeerView AS SELECT * FROM Beer",
+			@"CREATE VIEW BeerView2 WITH SCHEMABINDING AS SELECT ID, Description FROM dbo.Beer",
+			@"CREATE NONCLUSTERED INDEX IX_Beer ON Beer (Description)",
+			@"CREATE PROC [BeerProc] AS SELECT * FROM BeerView",
+			@"GRANT EXEC ON [BeerProc] TO [public]",
+			@"CREATE FUNCTION [BeerFunc] () RETURNS [int] AS BEGIN DECLARE @i [int] SELECT @i=MAX(ID) FROM BeerView RETURN @i END",
+			@"CREATE FUNCTION [BeerTableFunc] () RETURNS @IDs TABLE (ID [int]) AS BEGIN INSERT INTO @IDs SELECT ID FROM BeerView RETURN END",
+			@"CREATE TABLE Keg ([ID] [int], [BeerID] [int])",
+			@"ALTER TABLE [Keg] ADD CONSTRAINT FK_Keg_Beer FOREIGN KEY ([BeerID]) REFERENCES Beer (ID)",
+			@"-- AUTOPROC All [Beer]",
+		};
+
 		[Test]
-		public void TestTableModify([ValueSource("ConnectionStrings")] string connectionString)
+		public void TestTableModify(
+			[ValueSource("ConnectionStrings")] string connectionString,
+			[ValueSource("_tableModifySchemas")] string initialTable,
+			[ValueSource("_tableModifySchemas")] string finalTable)
 		{
 			TestWithRollback(connectionString, connection =>
 			{
-				var tables = new string[]
-				{
-					// add columns of various types
-					"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](128))",
-					"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](256))",
-					"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](256), [OriginalGravity][decimal](18,4) NOT NULL)",
-					"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](256), [OriginalGravity][decimal](18,4) NOT NULL, [Stuff][xml] NULL)",
-					"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](256), [OriginalGravity][decimal](18,4) NOT NULL, [Stuff][xml] NULL, [ChangeDate][rowversion])",
+				// create the initial table with additional dependencies
+				List<string> schema = new List<string>() { initialTable };
+				schema.AddRange(_tableAdditionalSchema);
+				InstallAndVerify(connection, schema);
 
-					// drop columns and add them at the same time
-					// test identity creation
-					"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](256), [NewID] [int] IDENTITY (10, 10))",
-
-					// modify some types
-					"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](256), [ModifyDecimal] [decimal](18, 0) NOT NULL)",
-					"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](256), [ModifyDecimal] [decimal](18, 0) NULL)",
-					"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](256), [ModifyDecimal] [decimal](18, 2) NULL)",
-					"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](256), [ModifyString] [varchar](32))",
-					"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](256), [ModifyString] [varchar](MAX))",
-				};
-
-				for (int i = 0; i < tables.Length; i++)
-				{
-					List<string> schema = new List<string>() { tables[i] };
-					schema.Add(@"ALTER TABLE [Beer] ADD CONSTRAINT PK_Beer PRIMARY KEY ([ID])");
-					schema.Add(@"ALTER TABLE [Beer] ADD CONSTRAINT CK_BeerTable CHECK (ID > 0)");
-					schema.Add(@"ALTER TABLE [Beer] ADD CONSTRAINT CK_BeerColumn CHECK (ID > 5)");
-					schema.Add(@"ALTER TABLE [Beer] ADD CONSTRAINT DF_Beer_Description DEFAULT 'IPA' FOR Description");
-					schema.Add(@"CREATE VIEW BeerView AS SELECT * FROM Beer");
-					schema.Add(@"CREATE VIEW BeerView2 WITH SCHEMABINDING AS SELECT ID, Description FROM dbo.Beer");
-					schema.Add(@"CREATE NONCLUSTERED INDEX IX_Beer ON Beer (Description)");
-					schema.Add(@"CREATE PROC [BeerProc] AS SELECT * FROM BeerView");
-					schema.Add(@"GRANT EXEC ON [BeerProc] TO [public]");
-					schema.Add(@"CREATE FUNCTION [BeerFunc] () RETURNS [int] AS BEGIN DECLARE @i [int] SELECT @i=MAX(ID) FROM BeerView RETURN @i END");
-					schema.Add(@"CREATE FUNCTION [BeerTableFunc] () RETURNS @IDs TABLE (ID [int]) AS BEGIN INSERT INTO @IDs SELECT ID FROM BeerView RETURN END");
-					schema.Add(@"CREATE TABLE Keg ([ID] [int], [BeerID] [int])");
-					schema.Add(@"ALTER TABLE [Keg] ADD CONSTRAINT FK_Keg_Beer FOREIGN KEY ([BeerID]) REFERENCES Beer (ID)");
-					schema.Add(@"-- AUTOPROC All [Beer]");
-
-					// try to install the schema and verify that they are there
-					Install(connection, schema);
-					VerifyObjectsAndRegistry(schema, connection);
-				}
+				// create the new final table and install that
+				schema = new List<string>() { finalTable };
+				schema.AddRange(_tableAdditionalSchema);
+				InstallAndVerify(connection, schema);
 			});
 		}
+		#endregion
 
 		#region Column Default Tests
 		/// <summary>

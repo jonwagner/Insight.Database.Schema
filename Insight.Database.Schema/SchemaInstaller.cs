@@ -410,12 +410,43 @@ namespace Insight.Database.Schema
 		/// <param name="newTableName">The new name of the table.</param>
 		private void ScriptColumns(InstallContext context, string oldTableName, string newTableName)
 		{
+			Func<dynamic, dynamic, bool> compareColumns = (dynamic c1, dynamic c2) => (c1.Name == c2.Name);
+			Func<dynamic, dynamic, bool> areColumnsEqual = (dynamic c1, dynamic c2) =>
+				c1.TypeName == c2.TypeName &&
+				c1.MaxLength == c2.MaxLength &&
+				c1.Precision == c2.Precision &&
+				c1.Scale == c2.Scale &&
+				c1.IsNullable == c2.IsNullable &&
+				c1.IsIdentity == c2.IsIdentity &&
+				c1.IdentitySeed == c2.IdentitySeed &&
+				c1.IdentityIncrement == c2.IdentityIncrement &&
+				c1.Definition == c2.Definition;
+
 			// get the columns for each of the tables
 			var oldColumns = GetColumnsForTable(oldTableName);
 			var newColumns = GetColumnsForTable(newTableName);
 
+			var missingColumns = oldColumns.Except(newColumns, compareColumns).ToList();
+			var addColumns = newColumns.Except(oldColumns, compareColumns).ToList();
+
+			// calculate which ones changed and add them to both lists
+			var changedColumns = newColumns.Where((dynamic cc) =>
+			{
+				dynamic oldColumn = oldColumns.FirstOrDefault(oc => compareColumns(cc, oc));
+
+				return (oldColumn != null) && !areColumnsEqual(oldColumn, cc);
+			}).ToList();
+
+			// if we want to modify a computed column, we have to drop/add it
+			var changedComputedColumns = changedColumns.Where(c => c.Definition != null).ToList();
+			foreach (var cc in changedComputedColumns)
+			{
+				missingColumns.Add(cc);
+				addColumns.Add(cc);
+				changedColumns.Remove(cc);
+			}
+
 			// delete old columns - this should be pretty free
-			var missingColumns = oldColumns.Where((dynamic o) => !newColumns.Any((dynamic n) => o.Name == n.Name));
 			if (missingColumns.Any())
 			{
 				StringBuilder sb = new StringBuilder();
@@ -426,7 +457,6 @@ namespace Insight.Database.Schema
 			}
 
 			// add new columns - this is free when the columns are nullable
-			var addColumns = newColumns.Where((dynamic o) => !oldColumns.Any((dynamic n) => o.Name == n.Name));
 			if (addColumns.Any())
 			{
 				StringBuilder sb = new StringBuilder();
@@ -437,26 +467,12 @@ namespace Insight.Database.Schema
 			}
 
 			// alter columns
-			foreach (dynamic oldColumn in oldColumns)
+			foreach (dynamic column in changedColumns)
 			{
-				dynamic newColumn = newColumns.FirstOrDefault((dynamic n) => SqlParser.UnformatSqlName(n.Name) == SqlParser.UnformatSqlName(oldColumn.Name));
-				if (newColumn == null)
-					continue;
-
-				if (oldColumn.TypeName != newColumn.TypeName ||
-					oldColumn.MaxLength != newColumn.MaxLength ||
-					oldColumn.Precision != newColumn.Precision ||
-					oldColumn.Scale != newColumn.Scale ||
-					oldColumn.IsNullable != newColumn.IsNullable ||
-					oldColumn.IsIdentity != newColumn.IsIdentity ||
-					oldColumn.IdentitySeed != newColumn.IdentitySeed ||
-					oldColumn.IdentityIncrement != newColumn.IdentityIncrement)
-				{
-					StringBuilder sb = new StringBuilder();
-					sb.AppendFormat("ALTER TABLE {0} ALTER COLUMN ", SqlParser.FormatSqlName(oldTableName));
-					sb.AppendFormat(GetColumnDefinition(newColumn));
-					context.AddObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
-				}
+				StringBuilder sb = new StringBuilder();
+				sb.AppendFormat("ALTER TABLE {0} ALTER COLUMN ", SqlParser.FormatSqlName(oldTableName));
+				sb.AppendFormat(GetColumnDefinition(column));
+				context.AddObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
 			}
 		}
 
@@ -522,10 +538,11 @@ namespace Insight.Database.Schema
 		/// <returns>The list of columns on the table.</returns>
 		private IEnumerable<FastExpando> GetColumnsForTable(string tableName)
 		{
-			return _connection.QuerySql(@"SELECT Name=c.name, ColumnID=c.column_id, TypeName = t.name, MaxLength=c.max_length, Precision=c.precision, scale=c.scale, IsNullable=c.is_nullable, IsIdentity=c.is_identity, IdentitySeed=i.seed_value, IdentityIncrement=i.increment_value
+			return _connection.QuerySql(@"SELECT Name=c.name, ColumnID=c.column_id, TypeName = t.name, MaxLength=c.max_length, Precision=c.precision, scale=c.scale, IsNullable=c.is_nullable, IsIdentity=c.is_identity, IdentitySeed=i.seed_value, IdentityIncrement=i.increment_value, Definition=cc.definition
 				FROM sys.columns c
 				JOIN sys.types t ON (c.system_type_id = t.system_type_id AND c.user_type_id = t.user_type_id)
 				LEFT JOIN sys.identity_columns i ON (c.object_id = i.object_id AND c.column_id = i.column_id)
+				LEFT JOIN sys.computed_columns cc ON (cc.object_id = c.object_id AND cc.column_id = c.column_id)
 				WHERE c.object_id = OBJECT_ID (@TableName)",
 				new { TableName = tableName });
 		}
@@ -564,31 +581,41 @@ namespace Insight.Database.Schema
 		{
 			StringBuilder sb = new StringBuilder();
 			sb.Append(SqlParser.FormatSqlName(column.Name));
-			sb.AppendFormat(" {0}", column.TypeName);
 
-			string typeName = column.TypeName;
-			switch (typeName)
+			if (column.Definition == null)
 			{
-				case "nvarchar":
-				case "varchar":
-				case "varbinary":
-					if (column.MaxLength == -1)
-						sb.Append("(MAX)");
-					else
-						sb.AppendFormat("({0})", column.MaxLength);
-					break;
+				// this is a regular column, add in the type of the column
+				sb.AppendFormat(" {0}", column.TypeName);
 
-				case "decimal":
-				case "numeric":
-					sb.AppendFormat("({0}, {1})", column.Precision, column.Scale);
-					break;
+				string typeName = column.TypeName;
+				switch (typeName)
+				{
+					case "nvarchar":
+					case "varchar":
+					case "varbinary":
+						if (column.MaxLength == -1)
+							sb.Append("(MAX)");
+						else
+							sb.AppendFormat("({0})", column.MaxLength);
+						break;
+
+					case "decimal":
+					case "numeric":
+						sb.AppendFormat("({0}, {1})", column.Precision, column.Scale);
+						break;
+				}
+
+				if (column.IsIdentity)
+					sb.AppendFormat(" IDENTITY ({0}, {1})", column.IdentitySeed, column.IdentityIncrement);
+
+				if (!column.IsNullable)
+					sb.Append(" NOT NULL");
 			}
-
-			if (column.IsIdentity)
-				sb.AppendFormat(" IDENTITY ({0}, {1})", column.IdentitySeed, column.IdentityIncrement);
-
-			if (!column.IsNullable)
-				sb.Append(" NOT NULL");
+			else
+			{
+				// add in computed columns
+				sb.AppendFormat(" AS {0}", column.Definition);
+			}
 
 			return sb.ToString();
 		}
