@@ -21,15 +21,26 @@
 	<ItemGroup>
 		<NuPackFiles Include="**\*.nupkg" Exclude="packages\**\*.nupkg" />
 	</ItemGroup>
+  
 	<!-- ********************************************************************** -->
 	<!-- END OF CONFIGURATION DATA -->
 	<!-- ********************************************************************** -->
 	<PropertyGroup>
 		<VersionFile>version.txt</VersionFile>
 	</PropertyGroup>
-	<Target Name="AutoBuild" DependsOnTargets="IncrementVersion;Build">
-	</Target>
-	<!-- IncrementVersion - Increments the version number. $(Revision) will be the new revision. -->
+
+  <!-- Standard autobuild. -->
+  <Target Name="AutoBuild" DependsOnTargets="IncrementVersion;TestBuild">
+  </Target>
+  
+  <!-- Test Build without increment version. -->
+  <Target Name="TestBuild" DependsOnTargets="AssemblyInfo;BuildNet40;Build;Package">
+    <!-- Make sure that we revert the assembly info -->
+    <CallTarget Targets="RevertAssemblyInfo" />
+    <OnError ExecuteTargets="RevertAssemblyInfo" />
+  </Target>
+
+  <!-- IncrementVersion - Increments the version number. $(Revision) will be the new revision. -->
   <Target Name="IncrementVersion">
     <!-- Update the build number from the version file -->
     <Version VersionFile="$(VersionFile)" BuildType="Increment" RevisionType="None">
@@ -40,6 +51,7 @@
     <Exec Command="git commit -a -m &quot;Version $(Major).$(Minor).$(Build)&quot;" />
     <Exec Command="git tag -a -m &quot;Version $(Major).$(Minor).$(Build)&quot; Version_$(Major).$(Minor).$(Build)" />
   </Target>
+  
 	<!-- GetLocalVersion - Gets the version information for the local repository -->
   <Target Name="GetLocalVersion">
     <!-- Get the major/minor/build number from the version file -->
@@ -59,25 +71,40 @@
 		<Message Text="Updating NuGet Package Versions" />
 		<XmlUpdate XmlFileName="%(NuGetFiles.Identity)" XPath="//package/metadata/version" Value="$(Major).$(Minor).$(Build)" />
 	</Target>
-	<!-- Build the program -->
-	<Target Name="Build" DependsOnTargets="AssemblyInfo">
+
+  <!-- Build the .NET 4.0 assembly -->
+  <Target Name="BuildNet40">
+    <MSBuild Projects="%(SolutionFiles.Identity)" Properties="Configuration=$(Configuration);TargetFrameworkVersion=v4.0;" StopOnFirstFailure="true" />
+    <!-- Test Before Packaging -->
+    <Exec Command="packages\NUnit.2.6.0.12054\tools\nunit-console .\Insight.Database.Schema.Tests\bin\$(Configuration)\Insight.Database.Schema.Tests.dll"/>
+    <MakeDir Directories="Insight.Database.Schema\bin\NET40"/>
+    <Copy SourceFiles="@(Net40Outputs)" DestinationFolder="Insight.Database.Schema\bin\NET40"/>
+  </Target>
+  <ItemGroup>
+    <Net40Outputs Include="Insight.Database.Schema\bin\Release\Insight.Database.Schema.*"></Net40Outputs>
+  </ItemGroup>
+
+  <!-- Build the program -->
+	<Target Name="Build">
 		<Message Text="Building Version: $(Major).$(Minor).$(Build)" />
 		<Delete Files="%(NuPackFiles.Identity)" />
 		<!-- Build the solution -->
 		<MSBuild Projects="%(SolutionFiles.Identity)" Properties="Configuration=$(Configuration)" StopOnFirstFailure="true" />
     <!-- Test Before Packaging -->
-    <Exec Command="packages\NUnit.2.6.0.12054\tools\\nunit-console .\Insight.Database.Schema.Tests\bin\$(Configuration)\Insight.Database.Schema.Tests.dll"/>
-    <!-- Build the NuGet Packages -->
-		<MakeDir Directories="Build\Output" />
-		<Exec Command="nuget.exe pack %(NuGetFiles.Identity) /OutputDirectory Build\Output" />
-		<!-- Make sure that we revert the assembly info -->
-		<CallTarget Targets="RevertAssemblyInfo" />
-		<OnError ExecuteTargets="RevertAssemblyInfo" />
+    <Exec Command="packages\NUnit.2.6.0.12054\tools\nunit-console .\Insight.Database.Schema.Tests\bin\$(Configuration)\Insight.Database.Schema.Tests.dll"/>
 	</Target>
+  
   <Target Name="RevertAssemblyInfo">
     <!-- Revert the Assembly Info files when complete -->
     <Exec Command="git checkout %(AssemblyInfoFiles.Identity)" Condition="Exists(%(AssemblyInfoFiles.Identity))" />
     <Exec Command="git checkout %(NuGetFiles.Identity)" Condition="Exists(%(NuGetFiles.Identity))" />
   </Target>
 	<Import Project="packages\BuildTools.AutoBuild.1.0.17.47\tools\Build\MSBuild.Community.Tasks.Targets" />
+
+  <!-- Build the NuGet Package -->
+  <Target Name="Package">
+    <Message Text="Packaging NuGet" />
+    <MakeDir Directories="Build\Output" />
+    <Exec Command=".nuget\nuget.exe pack %(NuGetFiles.Identity) /OutputDirectory Build\Output" />
+  </Target>
 </Project>

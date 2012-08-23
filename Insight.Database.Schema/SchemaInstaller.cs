@@ -355,9 +355,9 @@ namespace Insight.Database.Schema
 		{
 			// detect the name of the table and replace it.
 			// TODO: support more than one unique constraint on a table
-			Regex createTableRegex = new Regex(String.Format(@"CREATE\s+TABLE\s+{0}", SqlParser.SqlNameExpression), RegexOptions.IgnoreCase);
-			Regex primaryKeyRegex = new Regex(String.Format(@"CONSTRAINT\s+{0}\s+PRIMARY\s+KEY", SqlParser.SqlNameExpression), RegexOptions.IgnoreCase);
-			Regex uniqueKeyRegex = new Regex(String.Format(@"CONSTRAINT\s+{0}\s+UNIQUE", SqlParser.SqlNameExpression), RegexOptions.IgnoreCase);
+            Regex createTableRegex = new Regex(String.Format(CultureInfo.InvariantCulture, @"CREATE\s+TABLE\s+{0}", SqlParser.SqlNameExpression), RegexOptions.IgnoreCase);
+            Regex primaryKeyRegex = new Regex(String.Format(CultureInfo.InvariantCulture, @"CONSTRAINT\s+{0}\s+PRIMARY\s+KEY", SqlParser.SqlNameExpression), RegexOptions.IgnoreCase);
+            Regex uniqueKeyRegex = new Regex(String.Format(CultureInfo.InvariantCulture, @"CONSTRAINT\s+{0}\s+UNIQUE", SqlParser.SqlNameExpression), RegexOptions.IgnoreCase);
 
 			string oldTableName = schemaObject.Name;
 			string newTableName = "Insight__tmp_" + DateTime.Now.Ticks.ToString(CultureInfo.InvariantCulture);
@@ -711,7 +711,7 @@ namespace Insight.Database.Schema
 
 			if (schemaObject.SchemaObjectType == SchemaObjectType.Index)
 			{
-				indexes = _connection.QuerySql(String.Format(@"
+				indexes = _connection.QuerySql(String.Format(CultureInfo.InvariantCulture, @"
 					SELECT Name=i.name, TableName=o.name, Type=i.type_desc, IsUnique=i.is_unique, IsConstraint=CONVERT(bit, CASE WHEN k.object_id IS NOT NULL THEN 1 ELSE 0 END), IsPrimaryKey=CONVERT(bit, CASE WHEN k.type_desc = 'PRIMARY_KEY_CONSTRAINT' THEN 1 ELSE 0 END) {0}
 						FROM sys.indexes currentindex
 						JOIN sys.indexes i ON (currentindex.object_id = i.object_id AND currentindex.index_id <> i.index_id)
@@ -727,7 +727,7 @@ namespace Insight.Database.Schema
 			}
 			else
 			{
-				indexes = _connection.QuerySql(String.Format(@"
+                indexes = _connection.QuerySql(String.Format(CultureInfo.InvariantCulture, @"
 					SELECT Name=i.name, TableName=o.name, Type=i.type_desc, IsUnique=i.is_unique, IsConstraint=CONVERT(bit, CASE WHEN k.object_id IS NOT NULL THEN 1 ELSE 0 END), IsPrimaryKey=CONVERT(bit, CASE WHEN k.type_desc = 'PRIMARY_KEY_CONSTRAINT' THEN 1 ELSE 0 END) {0}
 						FROM sys.indexes i
 						JOIN sys.objects o ON (i.object_id = o.object_id)
