@@ -198,7 +198,10 @@ namespace Insight.Database.Schema
 
 			// get the list of objects to install, filtering out the extra crud
 			InstallContext context = new InstallContext();
-			context.SchemaObjects = OrderSchemaObjects(schema.Where (o => o.SchemaObjectType != SchemaObjectType.Unused));
+			context.SchemaObjects = OrderSchemaObjects(schema.Where(o => o.SchemaObjectType != SchemaObjectType.Unused));
+
+			// azure doesn't support filegroups or partitions, so we need to know if we are on azure
+			context.IsAzure = _connection.ExecuteScalarSql<bool>("SELECT CONVERT(bit, CASE WHEN SERVERPROPERTY('edition') = 'SQL Azure' THEN 1 ELSE 0 END)", Parameters.Empty);
 
 			using (TransactionScope transaction = new TransactionScope(TransactionScopeOption.Required, new TimeSpan(1, 0, 0, 0, 0)))
 			{
@@ -382,7 +385,7 @@ namespace Insight.Database.Schema
 
 				// script constraints before columns because constraints depend on columns
 				ScriptConstraints(context, oldTableName, newTableName);
-				ScriptColumns(context, oldTableName, newTableName);
+				ScriptColumns(context, schemaObject, oldTableName, newTableName);
 			}
 			finally
 			{
@@ -406,9 +409,10 @@ namespace Insight.Database.Schema
 		/// Script changes to a table column.
 		/// </summary>
 		/// <param name="context">The installation context.</param>
+		/// <param name="schemaObject">The table object that we are modifying.</param>
 		/// <param name="oldTableName">The old name of the table.</param>
 		/// <param name="newTableName">The new name of the table.</param>
-		private void ScriptColumns(InstallContext context, string oldTableName, string newTableName)
+		private void ScriptColumns(InstallContext context, SchemaObject schemaObject, string oldTableName, string newTableName)
 		{
 			Func<dynamic, dynamic, bool> compareColumns = (dynamic c1, dynamic c2) => (c1.Name == c2.Name);
 			Func<dynamic, dynamic, bool> areColumnsEqual = (dynamic c1, dynamic c2) =>
@@ -469,6 +473,10 @@ namespace Insight.Database.Schema
 			// alter columns
 			foreach (dynamic column in changedColumns)
 			{
+				// find any indexes that are on that column
+				ScriptIndexes(context, schemaObject, column.Name);
+
+				// script the alter
 				StringBuilder sb = new StringBuilder();
 				sb.AppendFormat("ALTER TABLE {0} ALTER COLUMN ", SqlParser.FormatSqlName(oldTableName));
 				sb.AppendFormat(GetColumnDefinition(column));
@@ -807,48 +815,38 @@ namespace Insight.Database.Schema
 		/// </summary>
 		/// <param name="context">The installation context.</param>
 		/// <param name="schemaObject">The schemaObject to script.</param>
-		private void ScriptIndexes(InstallContext context, SchemaObject schemaObject)
+		/// <param name="columnName">If specified, then this is the name of the column to filter on.</param>
+		private void ScriptIndexes(InstallContext context, SchemaObject schemaObject, string columnName = null)
 		{
 			// get the indexes and constraints on a table
 			// NOTE: we don't script system named indexes because we assume they are specified as part of the table definition
 			// NOTE: order by type: do the clustered indexes first because they also drop nonclustered indexes if the object is a view (not a table)
-			IList<FastExpando> indexes = null;
 
-			bool isAzure = _connection.ExecuteScalarSql<bool>("SELECT CONVERT(bit, CASE WHEN SERVERPROPERTY('edition') = 'SQL Azure' THEN 1 ELSE 0 END)", Parameters.Empty);
-
+			// determine the ID of the table that we are working with
+			int tableID;
 			if (schemaObject.SchemaObjectType == SchemaObjectType.Index)
-			{
-				indexes = _connection.QuerySql(String.Format(CultureInfo.InvariantCulture, @"
-					SELECT Name=i.name, TableName=o.name, Type=i.type_desc, IsUnique=i.is_unique, IsConstraint=CONVERT(bit, CASE WHEN k.object_id IS NOT NULL THEN 1 ELSE 0 END), IsPrimaryKey=CONVERT(bit, CASE WHEN k.type_desc = 'PRIMARY_KEY_CONSTRAINT' THEN 1 ELSE 0 END) {0}
-						FROM sys.indexes currentindex
-						JOIN sys.indexes i ON (currentindex.object_id = i.object_id AND currentindex.index_id <> i.index_id)
-						JOIN sys.objects o ON (i.object_id = o.object_id)
-						LEFT JOIN sys.key_constraints k ON (o.object_id = k.parent_object_id AND i.index_id = k.unique_index_id AND is_system_named = 0)
-						{1}
-						WHERE currentindex.name = @objectname AND currentIndex.type_desc = 'CLUSTERED' AND i.name IS NOT NULL", 
-							isAzure ? ", DataSpace=NULL" : ", DataSpace=ISNULL(f.name, p.name)",
-							isAzure ? "" : @"LEFT JOIN sys.partition_schemes p ON (i.data_space_id = p.data_space_id)
-								LEFT JOIN sys.filegroups f ON (i.data_space_id = f.data_space_id)"
-						),
-						new { ObjectName = SqlParser.UnformatSqlName(schemaObject.Name) });
-			}
+				tableID = _connection.ExecuteScalarSql<int>("SELECT i.object_id FROM sys.indexes i WHERE i.name = @ObjectName", new { ObjectName = SqlParser.UnformatSqlName(schemaObject.Name) });
 			else
-			{
-                indexes = _connection.QuerySql(String.Format(CultureInfo.InvariantCulture, @"
-					SELECT Name=i.name, TableName=o.name, Type=i.type_desc, IsUnique=i.is_unique, IsConstraint=CONVERT(bit, CASE WHEN k.object_id IS NOT NULL THEN 1 ELSE 0 END), IsPrimaryKey=CONVERT(bit, CASE WHEN k.type_desc = 'PRIMARY_KEY_CONSTRAINT' THEN 1 ELSE 0 END) {0}
-						FROM sys.indexes i
-						JOIN sys.objects o ON (i.object_id = o.object_id)
-						LEFT JOIN sys.key_constraints k ON (o.object_id = k.parent_object_id AND i.index_id = k.unique_index_id AND is_system_named = 0)
-						{1}
-						WHERE o.object_id = OBJECT_ID(@ObjectName) AND i.Name IS NOT NULL
-						ORDER BY Type",
-							isAzure ? ", DataSpace=NULL" : ", DataSpace=ISNULL(f.name, p.name)",
-							isAzure ? "" : @"LEFT JOIN sys.partition_schemes p ON (i.data_space_id = p.data_space_id)
-								LEFT JOIN sys.filegroups f ON (i.data_space_id = f.data_space_id)"
-						),
-						new { ObjectName = SqlParser.UnformatSqlName(schemaObject.Name) });
-			}
+				tableID = _connection.ExecuteScalarSql<int>("SELECT OBJECT_ID(@ObjectName)", new { ObjectName = schemaObject.Name });
 
+			// generate some sql to determine the proper index
+			string sql = "SELECT Name=i.name, TableName=o.name, Type=i.type_desc, IsUnique=i.is_unique, IsConstraint=CONVERT(bit, CASE WHEN k.object_id IS NOT NULL THEN 1 ELSE 0 END), IsPrimaryKey=CONVERT(bit, CASE WHEN k.type_desc = 'PRIMARY_KEY_CONSTRAINT' THEN 1 ELSE 0 END), DataSpace=";
+			sql += context.IsAzure ? "NULL" : "ISNULL(f.name, p.name)";
+			sql += @" FROM sys.indexes i
+						JOIN sys.objects o ON (i.object_id = o.object_id)
+						LEFT JOIN sys.key_constraints k ON (o.object_id = k.parent_object_id AND i.index_id = k.unique_index_id AND is_system_named = 0)";
+			if (!context.IsAzure)
+				sql += @"LEFT JOIN sys.partition_schemes p ON (i.data_space_id = p.data_space_id) LEFT JOIN sys.filegroups f ON (i.data_space_id = f.data_space_id)";
+			sql += @" WHERE o.object_id = @ObjectID AND i.Name IS NOT NULL";
+			if (columnName != null)
+				sql += @" AND i.index_Id IN (SELECT index_id 
+								FROM sys.index_columns ic
+								JOIN sys.columns c ON (c.object_id = ic.object_id AND c.column_id = ic.column_id)
+								WHERE ic.object_id = @ObjectID AND c.name = @ColumnName)";
+			sql += @" ORDER BY Type";
+
+			// find the indexes on the table
+			var indexes = _connection.QuerySql(sql, new { ObjectID = tableID, ColumnName = columnName });
 			foreach (dynamic index in indexes)
 			{
 				// get the columns in the key from the database
@@ -1083,6 +1081,7 @@ namespace Insight.Database.Schema
 			public List<SchemaObject> SchemaObjects;
 			public List<SchemaRegistryEntry> DropObjects;
 			public List<SchemaObject> AddObjects;
+			public bool IsAzure;
 		}
 	}
     #endregion

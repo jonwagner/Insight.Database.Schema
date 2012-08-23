@@ -223,6 +223,7 @@ namespace Insight.Database.Schema.Tests
 		private static List<string> _tableModifySchemas = new List<string> ()
 		{
 			// add columns of various types
+			"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](128))",
 			"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](256))",
 			"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](256), [OriginalGravity][decimal](18,4) NOT NULL)",
 			"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](256), [OriginalGravity][decimal](18,4) NOT NULL, [Stuff][xml] NULL)",
