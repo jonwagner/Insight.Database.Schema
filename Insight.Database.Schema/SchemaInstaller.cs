@@ -168,7 +168,14 @@ namespace Insight.Database.Schema
 		/// <returns>The script representing the changes to the database.</returns>
 		public string ScriptChanges(string schemaGroup, SchemaObjectCollection schema)
 		{
-			_connection.OnlyRecord(() => Install(schemaGroup, schema));
+			// create a transaction around the installation
+			// NOTE: don't commit the changes to the database
+			// WARNING: due to the way we script autoprocs (and maybe others), this has to modify the database, then roll back the changes
+			//	so you might not want to try this on a live production database. Go get a copy of your database, then do the scripting on a staging environment.
+			using (TransactionScope transaction = new TransactionScope(TransactionScopeOption.Required, new TimeSpan(1, 0, 0, 0, 0)))
+			{
+				_connection.OnlyRecord(() => Install(schemaGroup, schema));
+			}
 
 			return _connection.ScriptLog.ToString();
 		}
