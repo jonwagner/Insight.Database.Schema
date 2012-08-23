@@ -38,14 +38,13 @@ namespace Insight.Database.Schema.Tests
         /// <param name="sql">The sql to check.</param>
         [Test]
         public void TestUnsupportedSql([Values(
-            "ALTER TABLE Foo ADD DEFAULT (0) FOR Col",          // unnamed defaults
-            "CREATE TABLE Foo (id int DEFAULT (0))",            // inline unnamed defaults
-            "ALTER TABLE Foo ADD CONSTRAINT CHECK (id > 0)",    // unnamed check constraints
-            "CREATE TABLE Foo (id int, CHECK (id > 0))",        // inline unnamed check constraints
-            "ALTER TABLE Foo ADD PRIMARY KEY (ID)",             // unnamed primary key
-            "CREATE TABLE Foo (id int, PRIMARY KEY (ID))",      // inline unnamed primary key
-            "ALTER TABLE Foo ADD FOREIGN KEY (ID)",             // unnamed foreign key
-            "CREATE TABLE Foo (id int, FOREIGN KEY (ID))",      // inline unnamed foreign key
+            "ALTER TABLE Foo ADD DEFAULT (0) FOR Col",          // unnamed explicit defaults
+            "ALTER TABLE Foo ADD CONSTRAINT CHECK (id > 0)",    // unnamed explicit check constraints
+            "CREATE TABLE Foo (id int, CHECK (id > 0))",        // unnamed inline check constraints
+            "ALTER TABLE Foo ADD PRIMARY KEY (ID)",             // unnamed explicit primary key
+			"CREATE TABLE Foo (id int, PRIMARY KEY (ID))",      // unnamed inline primary key
+            "ALTER TABLE Foo ADD FOREIGN KEY (ID)",             // unnamed explicit foreign key
+			"CREATE TABLE Foo (id int, FOREIGN KEY (ID))",      // unnamed inline foreign key
             ""
         )] string sql)
         {

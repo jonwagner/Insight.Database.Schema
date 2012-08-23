@@ -72,7 +72,17 @@ namespace Insight.Database.Schema
 			return Find(schemaObject) != null;
 		}
 
-        /// <summary>
+		/// <summary>
+		/// Determine if the database already contains a given object
+		/// </summary>
+		/// <param name="schemaObject">The schema object to look for</param>
+		/// <returns>True if the object is in the registry, false otherwise</returns>
+		public bool Contains(string objectName)
+		{
+			return Find(objectName) != null;
+		}
+
+		/// <summary>
         /// Update the schema registry with the new objects
         /// </summary>
         /// <param name="schemaObject">The object to update</param>

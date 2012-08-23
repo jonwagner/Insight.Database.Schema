@@ -287,6 +287,16 @@ namespace Insight.Database.Schema
 					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.objects WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
 					    break;
 
+					case SchemaObjectType.Default:
+						{
+							command = String.Format(CultureInfo.InvariantCulture, @"SELECT COUNT(*)
+							FROM sys.default_constraints d
+							JOIN sys.objects o ON (d.parent_object_id = o.object_id)
+							JOIN sys.columns c ON (c.object_id = o.object_id AND c.column_id = d.parent_column_id)
+							WHERE o.name = '{0}' AND c.name = '{1}'", SqlParser.TableNameFromIndexName(Name), SqlParser.IndexNameFromFullName(Name));
+						}
+						break;
+
 				    case SchemaObjectType.MessageType:
 					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.service_message_types WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
 					    break;
@@ -359,6 +369,20 @@ namespace Insight.Database.Schema
                     string constraintName = split[split.Length - 1];
                     command.CommandText = String.Format (CultureInfo.InvariantCulture, "ALTER TABLE {0} DROP CONSTRAINT {1}", tableName, constraintName);
                     break;
+
+				case SchemaObjectType.Default:
+					command.CommandText = String.Format(CultureInfo.InvariantCulture, @"
+						-- ALTER TABLE DROP DEFAULT ON COLUMN
+						DECLARE @Name[nvarchar](256) 
+						SELECT @Name = d.name FROM sys.default_constraints d
+							JOIN sys.objects o ON (d.parent_object_id = o.object_id)
+							JOIN sys.columns c ON (c.object_id = o.object_id AND c.column_id = d.parent_column_id)
+							WHERE o.name = '{0}' AND c.name = '{1}'
+						DECLARE @sql[nvarchar](MAX) = 'ALTER TABLE {0} DROP CONSTRAINT [' + @Name + ']'
+						EXEC sp_executesql @sql
+					", SqlParser.TableNameFromIndexName(objectName), SqlParser.IndexNameFromFullName(objectName));
+					break;
+
 				case SchemaObjectType.IndexedView:
 				case SchemaObjectType.View:
                     command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP VIEW {0}", objectName);

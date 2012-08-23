@@ -213,7 +213,7 @@ namespace Insight.Database.Schema
 				_connection.DoNotLog(() =>
 				{
 					foreach (var change in schemaObjects.Where(o => registry.Find(o) != null && registry.Find(o).Signature != o.GetSignature(_connection, schema)))
-						ScriptUpdate(dropObjects, addObjects, registry, change);
+						ScriptUpdate(dropObjects, addObjects, schemaObjects, registry, change);
 				});
 
 				// sort the objects in install order
@@ -288,7 +288,7 @@ namespace Insight.Database.Schema
         /// <param name="addObjects">The list of adds</param>
         /// <param name="tableUpdates">The list of table updates</param>
         /// <param name="schemaObject">The object to update</param>
-		private void ScriptUpdate(List<SchemaRegistryEntry> dropObjects, List<SchemaObject> addObjects, SchemaRegistry registry, SchemaObject schemaObject)
+		private void ScriptUpdate(List<SchemaRegistryEntry> dropObjects, List<SchemaObject> addObjects, List<SchemaObject> schemaObjects, SchemaRegistry registry, SchemaObject schemaObject)
         {
 			// if we have already scripted this object, then don't do it again
 			if (addObjects.Any(o => o.Name == schemaObject.Name))
@@ -297,8 +297,8 @@ namespace Insight.Database.Schema
 			// if this is a table, then let's see if we can just modify the table
 			if (schemaObject.SchemaObjectType == SchemaObjectType.Table)
 			{
-				ScriptStandardDependencies(dropObjects, addObjects, registry, schemaObject);
-				ScriptTableUpdate(schemaObject, addObjects);
+				ScriptStandardDependencies(dropObjects, addObjects, schemaObjects, registry, schemaObject);
+				ScriptTableUpdate(dropObjects, schemaObject, addObjects, schemaObjects, registry);
 				return;
 			}
 
@@ -311,25 +311,25 @@ namespace Insight.Database.Schema
 
 			// don't log any of our scripting
 			ScriptPermissions(schemaObject, addObjects);
-			ScriptStandardDependencies(dropObjects, addObjects, registry, schemaObject);
+			ScriptStandardDependencies(dropObjects, addObjects, schemaObjects, registry, schemaObject);
 
 			// handle dependencies for different types of objects
 			if (schemaObject.SchemaObjectType == SchemaObjectType.IndexedView)
 			{
-				ScriptIndexes(dropObjects, addObjects, registry, schemaObject);
+				ScriptIndexes(dropObjects, addObjects, schemaObjects, registry, schemaObject);
 			}
 			else if (schemaObject.SchemaObjectType == SchemaObjectType.PrimaryKey)
 			{
-				ScriptForeignKeys(dropObjects, addObjects, registry, schemaObject);
-				ScriptXmlIndexes(dropObjects, addObjects, registry, schemaObject);
+				ScriptForeignKeys(dropObjects, addObjects, schemaObjects, registry, schemaObject);
+				ScriptXmlIndexes(dropObjects, addObjects, schemaObjects, registry, schemaObject);
 			}
 			else if (schemaObject.SchemaObjectType == SchemaObjectType.PrimaryXmlIndex)
 			{
-				ScriptXmlIndexes(dropObjects, addObjects, registry, schemaObject);
+				ScriptXmlIndexes(dropObjects, addObjects, schemaObjects, registry, schemaObject);
 			}
 			else if (schemaObject.SchemaObjectType == SchemaObjectType.Index)
 			{
-				ScriptIndexes(dropObjects, addObjects, registry, schemaObject);
+				ScriptIndexes(dropObjects, addObjects, schemaObjects, registry, schemaObject);
 			}
 
 			// drop the object after any dependencies are dropped
@@ -345,39 +345,50 @@ namespace Insight.Database.Schema
 			dropObjects.Add(dropEntry);
         }
 
+		private const string InsightTemp = "Insight__tmp_";
+
 		#region Table Update Methods
 		/// <summary>
 		/// Script the update of a table.
 		/// </summary>
 		/// <param name="schemaObject">The object to update.</param>
 		/// <param name="addObjects">The list of add scripts to add to.</param>
-		private void ScriptTableUpdate(SchemaObject schemaObject, List<SchemaObject> addObjects)
+		private void ScriptTableUpdate(List<SchemaRegistryEntry> dropObjects, SchemaObject schemaObject, List<SchemaObject> addObjects, List<SchemaObject> schemaObjects, SchemaRegistry registry)
 		{
 			// detect the name of the table and replace it.
 			// TODO: support more than one unique constraint on a table
             Regex createTableRegex = new Regex(String.Format(CultureInfo.InvariantCulture, @"CREATE\s+TABLE\s+{0}", SqlParser.SqlNameExpression), RegexOptions.IgnoreCase);
-            Regex primaryKeyRegex = new Regex(String.Format(CultureInfo.InvariantCulture, @"CONSTRAINT\s+{0}\s+PRIMARY\s+KEY", SqlParser.SqlNameExpression), RegexOptions.IgnoreCase);
-            Regex uniqueKeyRegex = new Regex(String.Format(CultureInfo.InvariantCulture, @"CONSTRAINT\s+{0}\s+UNIQUE", SqlParser.SqlNameExpression), RegexOptions.IgnoreCase);
+			Regex constraintRegex = new Regex(String.Format(CultureInfo.InvariantCulture, @"CONSTRAINT\s+({0})", SqlParser.SqlNameExpression), RegexOptions.IgnoreCase);
 
 			string oldTableName = schemaObject.Name;
-			string newTableName = "Insight__tmp_" + DateTime.Now.Ticks.ToString(CultureInfo.InvariantCulture);
+			string newTableName = InsightTemp + DateTime.Now.Ticks.ToString(CultureInfo.InvariantCulture);
 
 			try
 			{
 				// make a temporary table so we can analyze the difference
 				string tempTable = schemaObject.Sql;
-				tempTable = createTableRegex.Replace(schemaObject.Sql, "CREATE TABLE " + newTableName);
-				tempTable = primaryKeyRegex.Replace(tempTable, "CONSTRAINT [PK_" + newTableName + "] PRIMARY KEY");
-				tempTable = uniqueKeyRegex.Replace(tempTable, "CONSTRAINT [UQ_" + newTableName + "] UNIQUE");
+				tempTable = createTableRegex.Replace(tempTable, "CREATE TABLE " + newTableName);
+				tempTable = constraintRegex.Replace(tempTable, match =>
+					{
+						return "CONSTRAINT " + SqlParser.FormatSqlName(InsightTemp + SqlParser.UnformatSqlName(match.Groups[1].Value));
+					});
 				_connection.ExecuteSql(tempTable);
 
 				// script constraints before columns because constraints depend on columns
+				ScriptConstraints(dropObjects, addObjects, schemaObjects, registry, oldTableName, newTableName);
 				ScriptColumns(addObjects, oldTableName, newTableName);
 			}
 			finally
 			{
-				// clean up the temporary table
-				_connection.ExecuteSql("DROP TABLE " + newTableName);
+				try
+				{
+					// clean up the temporary table
+					_connection.ExecuteSql("DROP TABLE " + newTableName);
+				}
+				catch (SqlException)
+				{
+					// eat this and throw the original error
+				}
 			}
 		}
 
@@ -428,7 +439,6 @@ namespace Insight.Database.Schema
 					oldColumn.IdentityIncrement != newColumn.IdentityIncrement)
 				{
 					StringBuilder sb = new StringBuilder();
-					sb.AppendLine("-- SCRIPT");
 					sb.AppendFormat("ALTER TABLE {0} ALTER COLUMN ", SqlParser.FormatSqlName(oldTableName));
 					sb.AppendFormat(GetColumnDefinition(newColumn));
 					addObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
@@ -436,22 +446,59 @@ namespace Insight.Database.Schema
 			}
 		}
 
-		private void ScriptConstraints(List<SchemaObject> addObjects, string oldTableName, string newTableName)
+		/// <summary>
+		/// Script constraints on a table. This currently only handles defaults.
+		/// </summary>
+		/// <param name="dropObjects">The list of objects to be dropped.</param>
+		/// <param name="addObjects">The list of objects to be added.</param>
+		/// <param name="oldTableName">The name of the old table.</param>
+		/// <param name="newTableName">The name of the new table.</param>
+		private void ScriptConstraints(List<SchemaRegistryEntry> dropObjects, List<SchemaObject> addObjects, List<SchemaObject> schemaObjects, SchemaRegistry registry, string oldTableName, string newTableName)
 		{
+			// compare constraints by column then by name (if they are named)
+			Func<dynamic, dynamic, bool> compareConstraints = (dynamic c1, dynamic c2) => (c1.ColumnID == c2.ColumnID) && ((c1.Name == c2.Name) || (c1.IsSystemNamed && c2.IsSystemNamed));
+			Func<dynamic, string> getConstraintName = (dynamic c) => SqlParser.FormatSqlName(oldTableName) + "." + SqlParser.FormatSqlName(c.ColumnName);
+
 			// go through all of the system-named constraints on the table
-			var oldConstraints = GetConstraintsForTable(oldTableName);
+			// filter out any old constraints that we are dropping because we dropped the explicit constraint
+			var oldConstraints = GetConstraintsForTable(oldTableName)
+				.Where(c => !schemaObjects.Any(d => registry.Contains(getConstraintName(c))))
+				.ToList();
 			var newConstraints = GetConstraintsForTable(newTableName);
 
+			// detect missing and new constraints
+			var missingConstraints = oldConstraints.Except(newConstraints, compareConstraints).ToList();
+			var addConstraints = newConstraints.Except(oldConstraints, compareConstraints).ToList();
+
+			// calculate which ones changed and add them to both lists
+			var changedConstraints = newConstraints.Where((dynamic cc) =>
+				{
+					dynamic oldConstraint = oldConstraints.FirstOrDefault(oc => compareConstraints(cc, oc));
+
+					return (oldConstraint != null) && (oldConstraint.Definition != cc.Definition);
+				});
+			missingConstraints.AddRange(changedConstraints.Select(c => oldConstraints.First(o => compareConstraints(c, o))));
+			addConstraints.AddRange(changedConstraints);
+
 			// delete old constraints
-			var missingConstraints = oldConstraints.Except(newConstraints, (dynamic c1, dynamic c2) => c1.Name == c2.Name);
 			if (missingConstraints.Any())
 			{
+				foreach (var missingConstraint in missingConstraints)
+				{
+					var dropObject = new SchemaRegistryEntry() { Type = SchemaObjectType.Default, ObjectName = SqlParser.FormatSqlName(oldTableName) + "." + SqlParser.FormatSqlName(missingConstraint.ColumnName) }; 
+					if (!dropObjects.Any(o => o.ObjectName == dropObject.ObjectName))
+						dropObjects.Add(dropObject);
+				}
+			}
+
+			// add new constraints
+			if (addConstraints.Any())
+			{
 				StringBuilder sb = new StringBuilder();
-				sb.AppendLine("-- SCRIPT");
 				sb.AppendFormat("ALTER TABLE {0}", SqlParser.FormatSqlName(oldTableName));
-				sb.Append(" DROP");
-				sb.AppendLine(String.Join(",", missingConstraints.Select((dynamic o) => String.Format(" CONSTRAINT {0}", SqlParser.FormatSqlName(o.Name)))));
-				addObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
+				sb.Append(" ADD");
+				sb.AppendLine(String.Join(",", addConstraints.Select((dynamic o) => GetDefaultDefinition(o))));
+				addObjects.Add(new SchemaObject(SchemaObjectType.Default, oldTableName, sb.ToString()));
 			}
 		}
 
@@ -477,16 +524,22 @@ namespace Insight.Database.Schema
 		/// <returns>The list of constraints  on the table.</returns>
 		private IEnumerable<FastExpando> GetConstraintsForTable(string tableName)
 		{
-			return _connection.QuerySql(@"
-				SELECT name=c.Name, ColumnID=c.parent_column_id, TypeName=c.type_desc, definition=c.definition FROM sys.default_constraints c WHERE parent_object_id = OBJECT_ID(@TableName)
+			return _connection.QuerySql(String.Format(CultureInfo.InvariantCulture, @"
+				SELECT name=REPLACE(d.Name, '{0}', ''), ColumnID=d.parent_column_id, ColumnName=c.name, TypeName=d.type_desc, IsSystemNamed=d.is_system_named, Definition=d.definition 
+					FROM sys.default_constraints d 
+					JOIN sys.columns c ON (d.parent_object_id = c.object_id AND d.parent_column_id = c.column_id)
+					WHERE d.parent_object_id = OBJECT_ID(@TableName)
+/*
 				UNION 
 				SELECT name=c.Name, ColumnID=c.parent_column_id, TypeName=c.type_desc, definition=c.definition FROM sys.check_constraints c WHERE parent_object_id = OBJECT_ID(@TableName)
 				UNION 
 				SELECT name=c.Name, ColumnID=NULL, TypeName=c.type_desc, definition=NULL FROM sys.key_constraints c WHERE parent_object_id = OBJECT_ID(@TableName)
 				UNION 
 				SELECT name=c.Name, ColumnID=NULL, TypeName=c.type_desc, definition=NULL FROM sys.foreign_keys c WHERE parent_object_id = OBJECT_ID(@TableName)
-				",
-				new { TableName = tableName });
+*/
+				", InsightTemp),
+				new { TableName = tableName }).ToList();
+
 		}
 
 		/// <summary>
@@ -523,6 +576,28 @@ namespace Insight.Database.Schema
 
 			if (!column.IsNullable)
 				sb.Append(" NOT NULL");
+
+			return sb.ToString();
+		}
+
+		/// <summary>
+		/// Output the definition of a default.
+		/// </summary>
+		/// <param name="def">The default object.</param>
+		/// <returns>The string definition of the column.</returns>
+		private static string GetDefaultDefinition(dynamic def)
+		{
+			StringBuilder sb = new StringBuilder();
+
+			// if there is an actual name, then name it
+			if (!def.IsSystemNamed)
+				sb.AppendFormat(" CONSTRAINT {0}", def.Name);
+
+			// add the definition
+			sb.Append(" DEFAULT ");
+			sb.Append(def.Definition);
+			sb.Append(" FOR ");
+			sb.Append(SqlParser.FormatSqlName(def.ColumnName));
 
 			return sb.ToString();
 		}
@@ -572,7 +647,7 @@ namespace Insight.Database.Schema
 		/// <param name="addObjects">The current list of objects to add.</param>
 		/// <param name="registry">The registry to modify.</param>
 		/// <param name="schemaObject">The schemaObject to script.</param>
-		private void ScriptStandardDependencies(List<SchemaRegistryEntry> dropObjects, List<SchemaObject> addObjects, SchemaRegistry registry, SchemaObject schemaObject)
+		private void ScriptStandardDependencies(List<SchemaRegistryEntry> dropObjects, List<SchemaObject> addObjects, List<SchemaObject> schemaObjects, SchemaRegistry registry, SchemaObject schemaObject)
 		{
 			// find all of the dependencies on the object
 			// this will find things that use views or tables
@@ -631,7 +706,7 @@ namespace Insight.Database.Schema
 						throw new InvalidOperationException(String.Format(CultureInfo.InvariantCulture, "Cannot generate dependencies for object {0}.", dependencyName));
 				}
 
-				ScriptUpdate(dropObjects, addObjects, registry, dropObject);
+				ScriptUpdate(dropObjects, addObjects, schemaObjects, registry, dropObject);
 			}
 		}
 
@@ -642,7 +717,7 @@ namespace Insight.Database.Schema
 		/// <param name="addObjects">The current list of objects to add.</param>
 		/// <param name="registry">The registry to modify.</param>
 		/// <param name="schemaObject">The schemaObject to script.</param>
-		private void ScriptForeignKeys(List<SchemaRegistryEntry> dropObjects, List<SchemaObject> addObjects, SchemaRegistry registry, SchemaObject schemaObject)
+		private void ScriptForeignKeys(List<SchemaRegistryEntry> dropObjects, List<SchemaObject> addObjects, List<SchemaObject> schemaObjects, SchemaRegistry registry, SchemaObject schemaObject)
 		{
 			IList<FastExpando> foreignKeys = null;
 
@@ -689,7 +764,7 @@ namespace Insight.Database.Schema
 
 				var dropObject = new SchemaObject(sb.ToString());
 
-				ScriptUpdate(dropObjects, addObjects, registry, dropObject);
+				ScriptUpdate(dropObjects, addObjects, schemaObjects, registry, dropObject);
 			}
 		}
 
@@ -700,7 +775,7 @@ namespace Insight.Database.Schema
 		/// <param name="addObjects">The current list of objects to add.</param>
 		/// <param name="registry">The registry to modify.</param>
 		/// <param name="schemaObject">The schemaObject to script.</param>
-		private void ScriptIndexes(List<SchemaRegistryEntry> dropObjects, List<SchemaObject> addObjects, SchemaRegistry registry, SchemaObject schemaObject)
+		private void ScriptIndexes(List<SchemaRegistryEntry> dropObjects, List<SchemaObject> addObjects, List<SchemaObject> schemaObjects, SchemaRegistry registry, SchemaObject schemaObject)
 		{
 			// get the indexes and constraints on a table
 			// NOTE: we don't script system named indexes because we assume they are specified as part of the table definition
@@ -776,7 +851,7 @@ namespace Insight.Database.Schema
 
 				var dropObject = new SchemaObject(sb.ToString());
 
-				ScriptUpdate(dropObjects, addObjects, registry, dropObject);
+				ScriptUpdate(dropObjects, addObjects, schemaObjects, registry, dropObject);
 			}
 		}
 
@@ -787,7 +862,7 @@ namespace Insight.Database.Schema
 		/// <param name="addObjects"></param>
 		/// <param name="registry"></param>
 		/// <param name="schemaObject"></param>
-		private void ScriptXmlIndexes(List<SchemaRegistryEntry> dropObjects, List<SchemaObject> addObjects, SchemaRegistry registry, SchemaObject schemaObject)
+		private void ScriptXmlIndexes(List<SchemaRegistryEntry> dropObjects, List<SchemaObject> addObjects, List<SchemaObject> schemaObjects, SchemaRegistry registry, SchemaObject schemaObject)
 		{
 			IList<FastExpando> xmlIndexes;
 
@@ -841,7 +916,7 @@ namespace Insight.Database.Schema
 
 				var dropObject = new SchemaObject(sb.ToString());
 
-				ScriptUpdate(dropObjects, addObjects, registry, dropObject);
+				ScriptUpdate(dropObjects, addObjects, schemaObjects, registry, dropObject);
 			}
 		}
 		#endregion

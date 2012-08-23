@@ -327,7 +327,80 @@ namespace Insight.Database.Schema.Tests
 		//		Assert.Throws<ApplicationException>(() => Install(connection, schema));
 		//	});
 		//}
-	
+
+		#region Default Tests
+		/// <summary>
+		/// This is the set of schemas that we want to convert between. The test case tries all permutations of migrating from one to the other.
+		/// </summary>
+		private static List<IEnumerable<string>> _defaultSchemas = new List<IEnumerable<string>> ()
+		{
+			// no defaults
+			new string[] { @"CREATE TABLE Beer ([ID] [int], [Description][varchar](256))" },
+			// table modify
+			new string[] { @"CREATE TABLE Beer ([ID] [int], [Description][varchar](256), [Foo][varchar](128))", @"ALTER TABLE Beer ADD DEFAULT (0) FOR [ID]",},
+
+			// TWO inline named defaults
+			new string [] { @"CREATE TABLE Beer ([ID] [int] CONSTRAINT DF_Beer_ID DEFAULT (0), [Description][varchar](256) CONSTRAINT DF_Beer_Default DEFAULT ('Foo'))" },
+			// TWO inline anonymous defaults
+			new string [] { @"CREATE TABLE Beer ([ID] [int] DEFAULT (0), [Description][varchar](256) DEFAULT ('Foo'))" },
+			// TWO explicit named defaults
+			new string [] { @"CREATE TABLE Beer ([ID] [int], [Description][varchar](256))", @"ALTER TABLE Beer ADD CONSTRAINT DF_Beer_ID DEFAULT (0) FOR [ID]", @"ALTER TABLE Beer ADD CONSTRAINT DF_Beer_Description DEFAULT ('Foo') FOR [Description]" },
+			// TWO explicit anonymous defaults
+			new string [] { @"CREATE TABLE Beer ([ID] [int], [Description][varchar](256))", @"ALTER TABLE Beer ADD DEFAULT (0) FOR [ID]", @"ALTER TABLE Beer ADD DEFAULT ('Foo') FOR [Description]" },
+
+			// CHANGED TWO inline named defaults
+			new string [] { @"CREATE TABLE Beer ([ID] [int] CONSTRAINT DF_Beer_ID DEFAULT (1), [Description][varchar](256) CONSTRAINT DF_Beer_Default DEFAULT 'Moo')" },
+			// CHANGED TWO inline anonymous defaults
+			new string [] { @"CREATE TABLE Beer ([ID] [int] DEFAULT (1), [Description][varchar](256) DEFAULT 'Moo')" },
+			// CHANGED TWO explicit named defaults
+			new string [] { @"CREATE TABLE Beer ([ID] [int], [Description][varchar](256))", @"ALTER TABLE Beer ADD CONSTRAINT DF_Beer_ID DEFAULT (1) FOR [ID]", @"ALTER TABLE Beer ADD CONSTRAINT DF_Beer_Description DEFAULT 'Moo' FOR [Description]" },
+			// CHANGED TWO explicit anonymous defaults
+			new string [] { @"CREATE TABLE Beer ([ID] [int], [Description][varchar](256))", @"ALTER TABLE Beer ADD DEFAULT (1) FOR [ID]", @"ALTER TABLE Beer ADD DEFAULT 'Moo' FOR [Description]" },
+		};
+
+
+		static int i = 0;
+
+
+		/// <summary>
+		/// Test migrating from all different forms of defaults.
+		/// </summary>
+		/// <param name="connectionString">The connection to test.</param>
+		/// <param name="initialSchema">The schema to start from.</param>
+		/// <param name="finalSchema">The schema to end with</param>
+		[Test]
+		public void TestModifyingDefaults([ValueSource("ConnectionStrings")] string connectionString,
+			[ValueSource("_defaultSchemas")] IEnumerable<string> initialSchema,
+			[ValueSource("_defaultSchemas")] IEnumerable<string> finalSchema
+			)
+		{
+			if (++i != 3) return;
+
+			TestWithRollback(connectionString, connection =>
+			{
+				// set up the initial schema
+				InstallAndVerify(connection, initialSchema);
+				Assert.AreEqual(initialSchema.Any(s => s.Contains("DEFAULT (0)")), DefaultExists(connection, "Beer", "ID", "((0))"));
+				Assert.AreEqual(initialSchema.Any(s => s.Contains("DEFAULT (1)")), DefaultExists(connection, "Beer", "ID", "((1))"));
+				Assert.AreEqual(initialSchema.Any(s => s.Contains("DEFAULT ('Foo')")), DefaultExists(connection, "Beer", "Description", "('Foo')"));
+				Assert.AreEqual(initialSchema.Any(s => s.Contains("DEFAULT 'Moo'")), DefaultExists(connection, "Beer", "Description", "('Moo')"));
+
+				// set up the final schema
+				InstallAndVerify(connection, finalSchema);
+				Assert.AreEqual(finalSchema.Any(s => s.Contains("DEFAULT (0)")), DefaultExists(connection, "Beer", "ID", "((0))"));
+				Assert.AreEqual(finalSchema.Any(s => s.Contains("DEFAULT (1)")), DefaultExists(connection, "Beer", "ID", "((1))"));
+				Assert.AreEqual(finalSchema.Any(s => s.Contains("DEFAULT ('Foo')")), DefaultExists(connection, "Beer", "Description", "('Foo')"));
+				Assert.AreEqual(finalSchema.Any(s => s.Contains("DEFAULT 'Moo'")), DefaultExists(connection, "Beer", "Description", "('Moo')"));
+			});
+		}
+		#endregion
+
+		#region Helper Functions
+		/// <summary>
+		/// Verify all of the objects in the database and registry.
+		/// </summary>
+		/// <param name="schema">The schema to verify.</param>
+		/// <param name="connection">The connection to use.</param>
 		private static void VerifyObjectsAndRegistry(IEnumerable<string> schema, RecordingDbConnection connection)
 		{
 			connection.DoNotLog(() =>
@@ -348,6 +421,11 @@ namespace Insight.Database.Schema.Tests
 			});
 		}
 
+		/// <summary>
+		/// Install a schema into a database.
+		/// </summary>
+		/// <param name="connection">The connection to use.</param>
+		/// <param name="sql"the SQL to install.</param>
 		private static void Install(DbConnection connection, IEnumerable<string> sql)
 		{
 			SchemaInstaller installer = new SchemaInstaller(connection);
@@ -366,13 +444,46 @@ namespace Insight.Database.Schema.Tests
 
 			installer.Install("test", schema);
 		}
- 	}
 
-	static class InstallerTestExtensions
-	{
-		public static bool ObjectExists(this IDbConnection connection, string tableName)
+		/// <summary>
+		/// Install a schema into a database.
+		/// </summary>
+		/// <param name="connection">The connection to use.</param>
+		/// <param name="sql"the SQL to install.</param>
+		private static void InstallAndVerify(RecordingDbConnection connection, IEnumerable<string> sql)
 		{
-			return connection.ExecuteScalarSql<int>("SELECT COUNT(*) FROM sys.objects WHERE name = @TableName", new { TableName = SqlParser.UnformatSqlName(tableName) }) > 0;
+			Install(connection, sql);
+			VerifyObjectsAndRegistry(sql, connection);
 		}
+
+		/// <summary>
+		/// Verify that a default exists on a column.
+		/// </summary>
+		/// <param name="connection">The connection to test.</param>
+		/// <param name="table">The name of the table.</param>
+		/// <param name="column">The name of the column.</param>
+		/// <param name="value">If specified, the expected value of the default.</param>
+		/// <returns>True if the default exists as expected.</returns>
+		private bool DefaultExists(RecordingDbConnection connection, string table, string column, string value = null)
+		{
+			return connection.DoNotLog(() =>
+			{
+				string definition = connection.ExecuteScalarSql<string>(@"SELECT definition
+					FROM sys.default_constraints d
+					JOIN sys.objects o ON (d.parent_object_id = o.object_id)
+					JOIN sys.columns c ON (d.parent_object_id = c.object_id AND d.parent_column_id = c.column_id)
+					WHERE o.name = @TableName AND c.name = @ColumnName",
+					new { TableName = table, ColumnName = column });
+
+				if (definition == null)
+					return false;
+
+				if (value == null)
+					return true;
+
+				return definition == value;
+			});
+		}
+		#endregion
 	}
 }

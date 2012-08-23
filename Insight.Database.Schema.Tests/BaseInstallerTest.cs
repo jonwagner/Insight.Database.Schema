@@ -21,11 +21,11 @@ namespace Insight.Database.Schema.Tests
 		/// The list of connection strings that will be used to run tests.
 		/// </summary>
 		protected IEnumerable<string> ConnectionStrings { get { return _connectionStrings; } }
-		private static readonly ReadOnlyCollection<string> _connectionStrings = new ReadOnlyCollection<string>(new List<string>() 
-		{ 
-			ConfigurationManager.ConnectionStrings["Sql"].ConnectionString,
-			ConfigurationManager.ConnectionStrings["Azure"].ConnectionString
-		});
+		private static readonly ReadOnlyCollection<string> _connectionStrings = new ReadOnlyCollection<string>(
+			ConfigurationManager.ConnectionStrings.OfType<ConnectionStringSettings>()
+				.Where(c => c.Name.Contains("Test"))
+				.Select(c => c.ConnectionString)
+				.ToList());
 
 		/// <summary>
 		/// The schema group to use for the test cases.

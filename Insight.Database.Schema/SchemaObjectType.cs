@@ -92,6 +92,11 @@ namespace Insight.Database.Schema
         /// </summary>
         Table,
 
+		/// <summary>
+		/// A default in the database
+		/// </summary>
+		Default,
+
         /// <summary>
         /// A primary key on a table
         /// </summary>
