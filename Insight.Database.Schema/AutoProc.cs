@@ -23,7 +23,7 @@ namespace Insight.Database.Schema
 		/// <summary>
 		/// A string that is added to the hash of the dependencies so that the AutoProc can be forced to change if the internal implementation changes.
 		/// </summary>
-		private static string VersionSignature = "1.1.6.1";
+		private static string VersionSignature = "2.0.0.1";
 
 		/// <summary>
 		/// The name of the table that we are generating procedures for.
@@ -626,7 +626,8 @@ namespace Insight.Database.Schema
 			sb.Append(Join(columns, ",", "{1} {2} = NULL"));
 			sb.AppendLine(",");
 			sb.AppendLine("\t@Top [int] = NULL,");
-			sb.AppendLine("\t@OrderBy [nvarchar](256) = NULL,");
+            sb.AppendLine("\t@Skip [int] = NULL,");
+            sb.AppendLine("\t@OrderBy [nvarchar](256) = NULL,");
 			sb.AppendLine("\t@ThenBy [nvarchar](256) = NULL,");
 			sb.AppendLine(Join(columns, ",", "{1}Operator [varchar](10) = '='"));
 			sb.AppendLine(")");
@@ -634,7 +635,7 @@ namespace Insight.Database.Schema
 				sb.AppendLine("WITH EXECUTE AS OWNER");
 			sb.AppendLine("AS");
 			sb.AppendLine("DECLARE @sql [nvarchar](MAX) = 'SELECT '");
-			sb.AppendLine("\tIF @Top IS NOT NULL SET @sql = @sql + 'TOP (@Top) '");
+			sb.AppendLine("\tIF @Top IS NOT NULL AND @Skip IS NULL SET @sql = @sql + 'TOP (@Top) '");
 			sb.AppendFormat("SET @sql = @sql + ' * FROM {0} WHERE 1=1'", _tableName);
 			sb.AppendLine();
 
@@ -653,10 +654,19 @@ namespace Insight.Database.Schema
 			sb.AppendLine(Join(columns, ",", "'{0}', '{0} DESC'"));
 			sb.AppendLine(") THEN @ThenBy ELSE ' ORDER BY INVALID COLUMN ' END");
 
+            // handle top/skip -> offset/fetch
+            // if skip is specified, convert TOP to OFFSET
+            // if order by is not specified, then order by the first column
+            sb.AppendLine("IF @Skip IS NOT NULL BEGIN");
+            sb.AppendLine("\tIF @OrderBy IS NULL SET @sql = @sql + ' ORDER BY 1'");
+            sb.AppendLine("\tSET @sql = @sql + ' OFFSET @Skip ROWS'");
+            sb.AppendLine("\tIF @Top IS NOT NULL SET @sql = @sql + ' FETCH NEXT @Top ROWS ONLY'");
+            sb.AppendLine("END");
+
 			sb.AppendLine();
-			sb.AppendLine("EXEC sp_executesql @sql, N'@Top [int], ");
+			sb.AppendLine("EXEC sp_executesql @sql, N'@Top [int],@Skip [int],");
 			sb.AppendLine(Join(columns, ",", "{1} {2}"));
-			sb.AppendLine("', @Top=@Top,");
+			sb.AppendLine("', @Top=@Top,@Skip=@Skip,");
 			sb.AppendLine(Join(columns, ",", "{1}={1}"));
 
 			return sb.ToString();
