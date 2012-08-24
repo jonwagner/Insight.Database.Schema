@@ -805,31 +805,54 @@ namespace Insight.Database.Schema
 			// NOTE: we don't script system named indexes because we assume they are specified as part of the table definition
 			// NOTE: order by type: do the clustered indexes first because they also drop nonclustered indexes if the object is a view (not a table)
 
-			// determine the ID of the table that we are working with
-			int tableID;
-			if (schemaObject.SchemaObjectType == SchemaObjectType.Index)
-				tableID = _connection.ExecuteScalarSql<int>("SELECT i.object_id FROM sys.indexes i WHERE i.name = @ObjectName", new { ObjectName = SqlParser.UnformatSqlName(schemaObject.Name) });
-			else
-				tableID = _connection.ExecuteScalarSql<int>("SELECT OBJECT_ID(@ObjectName)", new { ObjectName = schemaObject.Name });
-
 			// generate some sql to determine the proper index
 			string sql = "SELECT Name=i.name, TableName=o.name, Type=i.type_desc, IsUnique=i.is_unique, IsConstraint=CONVERT(bit, CASE WHEN k.object_id IS NOT NULL THEN 1 ELSE 0 END), IsPrimaryKey=CONVERT(bit, CASE WHEN k.type_desc = 'PRIMARY_KEY_CONSTRAINT' THEN 1 ELSE 0 END), DataSpace=";
 			sql += context.IsAzure ? "NULL" : "ISNULL(f.name, p.name)";
-			sql += @" FROM sys.indexes i
+
+			// get the data for the dependent indexes
+			if (schemaObject.SchemaObjectType == SchemaObjectType.Index)
+			{
+				sql += @" FROM sys.indexes currentindex
+						JOIN sys.indexes i ON (currentindex.object_id = i.object_id AND currentindex.index_id <> i.index_id)
 						JOIN sys.objects o ON (i.object_id = o.object_id)
 						LEFT JOIN sys.key_constraints k ON (o.object_id = k.parent_object_id AND i.index_id = k.unique_index_id AND is_system_named = 0)";
+			}
+			else
+			{
+				sql += @" FROM sys.indexes i
+						JOIN sys.objects o ON (i.object_id = o.object_id)
+						LEFT JOIN sys.key_constraints k ON (o.object_id = k.parent_object_id AND i.index_id = k.unique_index_id AND is_system_named = 0)";
+			}
+
+			// SQL Server may put the index on different filegroups
 			if (!context.IsAzure)
-				sql += @"LEFT JOIN sys.partition_schemes p ON (i.data_space_id = p.data_space_id) LEFT JOIN sys.filegroups f ON (i.data_space_id = f.data_space_id)";
-			sql += @" WHERE o.object_id = @ObjectID AND i.Name IS NOT NULL";
+			{
+				sql += @" LEFT JOIN sys.partition_schemes p ON (i.data_space_id = p.data_space_id) 
+						LEFT JOIN sys.filegroups f ON (i.data_space_id = f.data_space_id)";
+			}
+
+			// add the where clause
+			if (schemaObject.SchemaObjectType == SchemaObjectType.Index)
+			{
+				sql += @" WHERE currentindex.name = @ObjectName AND currentIndex.type_desc = 'CLUSTERED' AND i.name IS NOT NULL";
+			}
+			else
+			{
+				sql += @" WHERE o.object_id = OBJECT_ID(@ObjectName) AND i.Name IS NOT NULL";
+			}
+
+			// filter by column if appropriate
 			if (columnName != null)
+			{
 				sql += @" AND i.index_Id IN (SELECT index_id 
 								FROM sys.index_columns ic
 								JOIN sys.columns c ON (c.object_id = ic.object_id AND c.column_id = ic.column_id)
-								WHERE ic.object_id = @ObjectID AND c.name = @ColumnName)";
+								WHERE ic.object_id = OBJECT_ID(@ObjectName) AND c.name = @ColumnName)";
+			}
 			sql += @" ORDER BY Type";
 
 			// find the indexes on the table
-			var indexes = _connection.QuerySql(sql, new { ObjectID = tableID, ColumnName = columnName });
+			var indexes = _connection.QuerySql(sql, new { ObjectName = SqlParser.UnformatSqlName(schemaObject.Name), ColumnName = columnName });
 			foreach (dynamic index in indexes)
 			{
 				// get the columns in the key from the database
