@@ -859,8 +859,32 @@ namespace Insight.Database.Schema
 				}
 				sb.Append(String.Join(",", columns.Select((dynamic c) => SqlParser.FormatSqlName(c.ColumnName))));
 				sb.Append(")");
+
+				// if the index is on another filegroup or partition scheme, add that
 				if (index.DataSpace != null)
+				{
 					sb.AppendFormat(" ON {0}", SqlParser.FormatSqlName(index.DataSpace));
+
+					// get the partition columns (this will be empty for non-partitioned indexes)
+					if (!context.IsAzure)
+					{
+						var partitionColumns = _connection.QuerySql<string>(@"SELECT ColumnName=c.name
+								FROM sys.index_columns ic
+								JOIN sys.columns c ON (ic.object_id = c.object_id AND ic.column_id = c.column_id)
+								JOIN sys.indexes i ON (i.object_id = ic.object_id AND i.index_id = ic.index_id)
+								JOIN sys.objects o ON (i.object_id = o.object_id)
+								WHERE o.name = @TableName AND i.name = @IndexName AND ic.partition_ordinal <> 0
+								ORDER BY ic.partition_ordinal",
+							new { TableName = SqlParser.UnformatSqlName(index.TableName), IndexName = SqlParser.UnformatSqlName(index.Name) });
+
+						if (partitionColumns.Any())
+						{
+							sb.Append("(");
+							sb.Append(String.Join(",", partitionColumns));
+							sb.Append(")");
+						}
+					}
+				}
 
 				var dropObject = new SchemaObject(sb.ToString());
 
