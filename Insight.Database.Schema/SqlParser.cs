@@ -71,9 +71,8 @@ namespace Insight.Database.Schema
 
             // make a list of SQL that we do NOT support
             List<SqlParser> unsupportedSql = new List<SqlParser>();
-//			unsupportedSql.Add(new SqlParser(SchemaObjectType.Unsupported, String.Format(CultureInfo.InvariantCulture, @"ALTER\s+TABLE\s+(?<tablename>{0}).+ADD\s+DEFAULT", SqlNameExpression), "$1 : Unnamed explicit DEFAULTs are not supported. Give the DEFAULT a name or put it inline in the table."));
 			unsupportedSql.Add(new SqlParser(SchemaObjectType.Unsupported, String.Format(CultureInfo.InvariantCulture, @"ALTER\s+TABLE\s+(?<tablename>{0}).+ADD\s+(CONSTRAINT\s+)?((CHECK\s*\()|(PRIMARY KEY)|(FOREIGN KEY))", SqlNameExpression), "$1 : Unnamed CONSTRAINTs are not supported"));
-            unsupportedSql.Add(new SqlParser(SchemaObjectType.Unsupported, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+TABLE\s+(?<tablename>{0}).+(CONSTRAINT\s+)?((CHECK\s*\()|(PRIMARY KEY)|(FOREIGN KEY))", SqlNameExpression), "$1 : Unnamed inline CONSTRAINTs are not supported"));
+            unsupportedSql.Add(new SqlParser(SchemaObjectType.Unsupported, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+TABLE\s+(?<tablename>{0}).+(CONSTRAINT\s+)?((CHECK\s*\()|(PRIMARY KEY)|(FOREIGN KEY))", SqlNameExpression), "$1 : Inline CONSTRAINTs are not supported"));
             UnsupportedSql = new ReadOnlyCollection<SqlParser>(unsupportedSql); 
 		}
 

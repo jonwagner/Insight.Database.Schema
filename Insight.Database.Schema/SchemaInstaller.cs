@@ -567,14 +567,6 @@ namespace Insight.Database.Schema
 					FROM sys.default_constraints d 
 					JOIN sys.columns c ON (d.parent_object_id = c.object_id AND d.parent_column_id = c.column_id)
 					WHERE d.parent_object_id = OBJECT_ID(@TableName)
-/*
-				UNION 
-				SELECT name=c.Name, ColumnID=c.parent_column_id, TypeName=c.type_desc, definition=c.definition FROM sys.check_constraints c WHERE parent_object_id = OBJECT_ID(@TableName)
-				UNION 
-				SELECT name=c.Name, ColumnID=NULL, TypeName=c.type_desc, definition=NULL FROM sys.key_constraints c WHERE parent_object_id = OBJECT_ID(@TableName)
-				UNION 
-				SELECT name=c.Name, ColumnID=NULL, TypeName=c.type_desc, definition=NULL FROM sys.foreign_keys c WHERE parent_object_id = OBJECT_ID(@TableName)
-*/
 				", InsightTemp),
 				new { TableName = tableName }).ToList();
 
@@ -775,15 +767,6 @@ namespace Insight.Database.Schema
 					WHERE k.name = @ObjectName",
 				new { ObjectName = SqlParser.IndexNameFromFullName(schemaObject.Name) });
 			}
-//			else
-//			{
-			//				foreignKeys = _connection.QuerySql(@"SELECT Name=f.name, TableName=o.name, RefTableName=r.name, DeleteAction=delete_referential_action_desc, UpdateAction=update_referential_action_desc
-//					FROM sys.foreign_keys f
-//					JOIN sys.objects o ON (f.parent_object_id = o.object_id)
-//					JOIN sys.objects r ON (f.referenced_object_id = r.object_id)
-//					WHERE f.referenced_object_id = OBJECT_ID(@ObjectName) OR f.parent_object_id = OBJECT_ID(@ObjectName)",
-//				new { ObjectName = SqlParser.IndexNameFromFullName(schemaObject.Name) });
-//			}
 
 			foreach (dynamic foreignKey in foreignKeys)
 			{

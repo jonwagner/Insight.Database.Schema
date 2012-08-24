@@ -42,12 +42,12 @@ namespace Insight.Database.Schema
 				// automatically handle the old format for entries
 				// WAS: [ROLE foo]
 				// NOW: ROLE [foo]
-				foreach (var entry in Entries)
+				foreach (var entry in Entries.Where(e => e.Type == SchemaObjectType.Queue || e.Type == SchemaObjectType.Service || e.Type == SchemaObjectType.Role))
 					entry.ObjectName = _registryUpgradeRegex.Replace(entry.ObjectName, "$1 [");
 			});
 		}
 
-		private static readonly Regex _registryUpgradeRegex = new Regex(@"\[((ROLE)|(QUEUE)|(SERVICE))\s*", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+		private static readonly Regex _registryUpgradeRegex = new Regex(@"^\[((ROLE)|(QUEUE)|(SERVICE))\s*", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         #endregion
 
         #region Public Methods
