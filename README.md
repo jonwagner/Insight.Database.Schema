@@ -1,8 +1,6 @@
 # Insight.Database.Schema #
 
-NOTE: v2.0 is a total rewrite without SQL-SMO dependencies. It's smarter, faster, and works with SQL Azure. The master branch has the v2.0 code, but it's not yet ready to ship (i.e. needs some real testing first). If you want the old code, you can get the 1.1 branch.
-
-**Insight.Database.Schema** is a dead-simple easy to use SQL Server database script installer and "code migrator".
+**Insight.Database.Schema** is a dead-simple easy to use SQL Server database script installer and "SQL code migrator".
 
 # Why You Want This #
 - It just works. 
@@ -10,6 +8,21 @@ NOTE: v2.0 is a total rewrite without SQL-SMO dependencies. It's smarter, faster
 - It gets out of your way.
 - SQL is SQL, not some mangled C# form of your data model
 - Works awesome with [Insight.Database](https://github.com/jonwagner/Insight.Database)
+
+## v2.0 Release ##
+Huzzah! v2.0 is finally done!
+
+Why is 2.0 better?
+
+- Compatibility with SQL Azure, so you can deploy to the cloud.
+- No dependency on SQL-SMO - SMO didn't play nicely with SQL Azure.
+- Better dependency detection - when you modify something, it makes the minimum set of changes to the database.
+- Column-level table updates - now columns can be added, removed, or modified without copying the entire data table.
+
+Also...
+
+- The code is a lot cleaner.
+- More test cases.
 
 # Documentation #
 
@@ -49,11 +62,16 @@ So assume you have Beer.sql:
 	SchemaObjectCollection schema = new SchemaObjectCollection();
 	schema.Load(System.Reflection.Assembly.GetExecutingAssembly());
 
+	// create the database
+	installer.CreateDatabase(connectionString);
+
 	// automatically create the database and install it
-	SchemaInstaller installer = new SchemaInstaller(connection.ConnectionString, connection.InitialCatalog);
-	new SchemaEventConsoleLogger().Attach(installer);
-	installer.CreateDatabase();
-	installer.Install("BeerGarten", schema);
+    using (SqlConnection connection = new SqlConnection (connectionString))
+	{
+		SchemaInstaller installer = new SchemaInstaller(connection);
+		new SchemaEventConsoleLogger().Attach(installer);
+		installer.Install("BeerGarten", schema);
+	}
 
 	// After you modify your SQL, just run this again!
 
@@ -61,7 +79,7 @@ So assume you have Beer.sql:
 
 Automatically generate standard stored procedures for your tables and have them updated automatically if you change your schema.
 
-	-- automatically generates Select/Insert/Update/Delete and more
+	-- automatically generates Select/Insert/Update/Delete/Find and more
 	AUTOPROC All [Beer]
 	GO
 

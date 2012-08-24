@@ -377,10 +377,13 @@ namespace Insight.Database.Schema
 						SELECT @Name = d.name FROM sys.default_constraints d
 							JOIN sys.objects o ON (d.parent_object_id = o.object_id)
 							JOIN sys.columns c ON (c.object_id = o.object_id AND c.column_id = d.parent_column_id)
-							WHERE o.name = '{0}' AND c.name = '{1}'
+							WHERE o.name = '{1}' AND c.name = '{2}'
 						DECLARE @sql[nvarchar](MAX) = 'ALTER TABLE {0} DROP CONSTRAINT [' + @Name + ']'
 						EXEC sp_executesql @sql
-					", SqlParser.TableNameFromIndexName(objectName), SqlParser.IndexNameFromFullName(objectName));
+					",
+					 SqlParser.FormatSqlName(SqlParser.TableNameFromIndexName(objectName)),
+					 SqlParser.TableNameFromIndexName(objectName), 
+					 SqlParser.IndexNameFromFullName(objectName));
 					break;
 
 				case SchemaObjectType.IndexedView:

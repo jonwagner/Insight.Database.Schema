@@ -75,8 +75,6 @@
   <!-- Build the .NET 4.0 assembly -->
   <Target Name="BuildNet40">
     <MSBuild Projects="%(SolutionFiles.Identity)" Properties="Configuration=$(Configuration);TargetFrameworkVersion=v4.0;" StopOnFirstFailure="true" />
-    <!-- Test Before Packaging -->
-    <Exec Command="packages\NUnit.2.6.0.12054\tools\nunit-console .\Insight.Database.Schema.Tests\bin\$(Configuration)\Insight.Database.Schema.Tests.dll"/>
     <MakeDir Directories="Insight.Database.Schema\bin\NET40"/>
     <Copy SourceFiles="@(Net40Outputs)" DestinationFolder="Insight.Database.Schema\bin\NET40"/>
   </Target>
@@ -85,11 +83,11 @@
   </ItemGroup>
 
   <!-- Build the program -->
-	<Target Name="Build">
-		<Message Text="Building Version: $(Major).$(Minor).$(Build)" />
-		<Delete Files="%(NuPackFiles.Identity)" />
-		<!-- Build the solution -->
-		<MSBuild Projects="%(SolutionFiles.Identity)" Properties="Configuration=$(Configuration)" StopOnFirstFailure="true" />
+  <Target Name="Build">
+	<Message Text="Building Version: $(Major).$(Minor).$(Build)" />
+	<Delete Files="%(NuPackFiles.Identity)" />
+	<!-- Build the solution -->
+	<MSBuild Projects="%(SolutionFiles.Identity)" Properties="Configuration=$(Configuration)" StopOnFirstFailure="true" />
     <!-- Test Before Packaging -->
     <Exec Command="packages\NUnit.2.6.0.12054\tools\nunit-console .\Insight.Database.Schema.Tests\bin\$(Configuration)\Insight.Database.Schema.Tests.dll"/>
 	</Target>

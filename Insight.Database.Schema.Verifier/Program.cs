@@ -125,11 +125,11 @@ namespace Insight.Database.Schema.Verifier
 							// Don't modify these. These have nothing to do with the installer.
 							case SchemaObjectType.UserPreScript:
 							case SchemaObjectType.Script:
-								break;
+								continue;
 
 							// These can't be modified if they are part of a table. It requires the table to be regenerated.
 							case SchemaObjectType.UserDefinedType:
-								break;
+								continue;
 
 							// TODO: don't test modifying these yet. I know the dependencies don't work.
 							case SchemaObjectType.PartitionFunction:
