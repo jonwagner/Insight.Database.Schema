@@ -50,7 +50,6 @@
   <ItemGroup>
     <Compile Include="AutoProc.cs" />
     <Compile Include="ColumnDefinition.cs" />
-    <Compile Include="ConvertTableEventArgs.cs" />
     <Compile Include="LambdaComparer.cs" />
     <Compile Include="SchemaException.cs" />
     <Compile Include="IColumnDefinitionProvider.cs" />

@@ -2,12 +2,17 @@
 
 **Insight.Database.Schema** is a dead-simple easy to use SQL Server database script installer and "SQL code migrator".
 
+- You write SQL schemas in SQL.
+- You *don't* write schema change scripts.
+- Insight will automatically calcualte the differences and apply them.
+- Great for distributed development of SQL, since you don't have to worry about writing any upgrade code.
+
 # Why You Want This #
 - It just works. 
 - Without a lot of effort or configuration. 
 - It gets out of your way.
-- SQL is SQL, not some mangled C# form of your data model
-- Works awesome with [Insight.Database](https://github.com/jonwagner/Insight.Database)
+- SQL is SQL, not some mangled C# form of your data model.
+- Works awesome with [Insight.Database](https://github.com/jonwagner/Insight.Database)!
 
 ## v2.0 Release ##
 Huzzah! v2.0 is finally done!
@@ -30,7 +35,7 @@ Also...
 
 # Some Examples #
 
-You can read these to get a flavor for the beer/code. But you should go over to the **[wiki](https://github.com/jonwagner/Insight.Database/wiki).**
+You can read these to get a flavor for the beer/code. But you should go over to the **[wiki](https://github.com/jonwagner/Insight.Database.Schema/wiki).**
 
 ## Getting Started ##
 1. Get the nuGet package: [http://www.nuget.org/packages/Insight.Database.Schema](http://www.nuget.org/packages/Insight.Database.Schema)
@@ -44,45 +49,68 @@ You can read these to get a flavor for the beer/code. But you should go over to 
 
 So assume you have Beer.sql:
 
+	CREATE TABLE Beer 
+	(
+		[ID] [int] IDENTITY, 
+		[Name] [varchar](128)
+	)
+	GO
 	CREATE PROC InsertBeer (@Name [varchar](128)) AS 
-		INSERT INTO Beer (Name) OUTPUT Inserted.ID VALUES (@Name)
+		INSERT INTO Beer (Name) 
+			OUTPUT Inserted.ID VALUES (@Name)
 	GO
-	CREATE TABLE Beer ([ID] [int] IDENTITY, [Name] [varchar](128))
-	GO
-
-## Add it as an Embedded Resource ##
-
-1. Add Beer.sql to your project.
-1. In Solution Explorer, right click on Beer.sql and choose Properties.
-1. Change the Build Action to "Embedded Resource".
 
 ## Load the Schema in your Setup code and Install it ##
 
-	// load all SQL files from the current assembly
-	SchemaObjectCollection schema = new SchemaObjectCollection();
-	schema.Load(System.Reflection.Assembly.GetExecutingAssembly());
+Only a little code is needed to deploy your SQL.
 
-	// create the database
+	// load your SQL into a SchemaObjectCOllection
+	SchemaObjectCollection schema = new SchemaObjectCollection();
+	schema.Load("Beer.sql");
+
+	// automatically create the database
 	installer.CreateDatabase(connectionString);
 
-	// automatically create the database and install it
+	// automatically install it, or upgrade it
     using (SqlConnection connection = new SqlConnection (connectionString))
 	{
+		connection.Open();
 		SchemaInstaller installer = new SchemaInstaller(connection);
 		new SchemaEventConsoleLogger().Attach(installer);
 		installer.Install("BeerGarten", schema);
 	}
 
-	// After you modify your SQL, just run this again!
+## Make some changes to your SQL ##
+
+Go ahead. Just modify the SQL. Don't worry about writing upgrade scripts.
+
+	CREATE TABLE Beer 
+	(
+		[ID] [int] IDENTITY NOT NULL, 
+		[Name] [varchar](128) NOT NULL,
+		[Description] [varchar](MAX)
+	)
+	GO
+	CREATE PROC InsertBeer (@Name [varchar](128), @Description [varchar](MAX)) AS 
+		INSERT INTO Beer (Name, Description) 
+			OUTPUT Inserted.ID VALUES (@Name, @Description)
+	GO
+
+Now, run your setup program again. Insight will automatically calculate the differences between the existing database and your new database. Then it will only make the changes necessary to update your database.
 
 ## Get AutoProcs for Free ##
 
 Automatically generate standard stored procedures for your tables and have them updated automatically if you change your schema.
 
+Get all of these for FREE! Select, Insert, Update, Upsert, Delete, SelectMany, InsertMany, UpdateMany, UpsertMany, DeleteMany, Find.
+
 	-- automatically generates Select/Insert/Update/Delete/Find and more
-	AUTOPROC All [Beer]
+	-- AUTOPROC All [Beer]
 	GO
 
 ## Use Insight.Database to Access Your Data ##
 
-See [Insight.Database](https://github.com/jonwagner/Insight.Database)!
+You don't have to use Insight.Database if you don't want to, but it's easy and fast.
+
+To call your stored procedures (and SQL) easily. Use [Insight.Database](https://github.com/jonwagner/Insight.Database)!
+It can even automatically generate a repository for all of the AutoProcs. You can select objects and send them back to the database with almost no effort!
