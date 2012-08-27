@@ -196,9 +196,14 @@ namespace Insight.Database.Schema
 			// make sure the schema objects are valid
 			schema.Validate();
 
+			// number the objects so when we compare them we have a final comparison
+			List<SchemaObject> schemaObjects = schema.Where(o => o.SchemaObjectType != SchemaObjectType.Unused).ToList();
+			for (int i = 0; i < schemaObjects.Count; i++)
+				schemaObjects[i].OriginalOrder = i;
+
 			// get the list of objects to install, filtering out the extra crud
 			InstallContext context = new InstallContext();
-			context.SchemaObjects = OrderSchemaObjects(schema.Where(o => o.SchemaObjectType != SchemaObjectType.Unused));
+			context.SchemaObjects = schemaObjects;
 
 			// azure doesn't support filegroups or partitions, so we need to know if we are on azure
 			context.IsAzure = _connection.ExecuteScalarSql<bool>("SELECT CONVERT(bit, CASE WHEN SERVERPROPERTY('edition') = 'SQL Azure' THEN 1 ELSE 0 END)", Parameters.Empty);
@@ -209,20 +214,21 @@ namespace Insight.Database.Schema
 				context.SchemaRegistry = new SchemaRegistry(_connection, schemaGroup);
 
 				// find all of the objects that we need to drop
+				// sort to drop in reverse dependency order 
 				context.DropObjects = context.SchemaRegistry.Entries
 					.Where(e => !context.SchemaObjects.Any(o => String.Compare(e.ObjectName, o.Name, StringComparison.OrdinalIgnoreCase) == 0))
 					.ToList();
-
-				// sort to drop in reverse dependency order 
 				context.DropObjects.Sort((e1, e2) => -CompareByInstallOrder(e1, e2));
 
 				// find all of the objects that are new
 				context.AddObjects = context.SchemaObjects.Where(o => !context.SchemaRegistry.Contains(o)).ToList();
-				context.AddObjects.Sort(CompareByInstallOrder);
 
 				// find all of the objects that have changed
 				_connection.DoNotLog(() =>
 				{
+					// order the changes by reverse install order
+					schemaObjects.Sort((o1, o2) => -CompareByInstallOrder(o1, o2));
+
 					foreach (var change in context.SchemaObjects.Where(o => context.SchemaRegistry.Find(o) != null && context.SchemaRegistry.Find(o).Signature != o.GetSignature(_connection, schema)))
 						ScriptUpdate(context, change);
 				});
@@ -232,7 +238,7 @@ namespace Insight.Database.Schema
 
 				// make the changes
 				DropObjects(context.DropObjects);
-				AddObjects(context.AddObjects, context.SchemaObjects);
+				AddObjects(context);
 				VerifyObjects(context.SchemaObjects);
 
 				// update the schema registry
@@ -299,6 +305,19 @@ namespace Insight.Database.Schema
         /// <param name="schemaObject">The object to update.</param>
 		private void ScriptUpdate(InstallContext context, SchemaObject schemaObject)
         {
+			// if we are dropping and readding an object, then make sure we put the object in the drop list at the right time
+			if (schemaObject.OriginalOrder == 0)
+			{
+				// if the object matches an existing schema object (probably), then find it and copy its installation order
+				var originalObject = context.SchemaObjects.Find(o => schemaObject.SchemaObjectType == o.SchemaObjectType && schemaObject.Name == o.Name);
+				if (originalObject != null)
+					schemaObject.OriginalOrder = originalObject.OriginalOrder;
+				else if (context.AddObjects.Any())
+					schemaObject.OriginalOrder = context.AddObjects.Max(o => o.OriginalOrder) + 1;
+				else
+					schemaObject.OriginalOrder = 1;
+			}
+
 			// if we have already scripted this object, then don't do it again
 			if (context.AddObjects.Any(o => o.Name == schemaObject.Name))
 				return;
@@ -312,10 +331,6 @@ namespace Insight.Database.Schema
 			}
 
 			// add the object to the add queue before anything that depends on it, as well as any permissions on the object
-			if (context.AddObjects.Any())
-				schemaObject.OriginalOrder = context.AddObjects.Max(o => o.OriginalOrder) + 1;
-			else
-				schemaObject.OriginalOrder = 1;
 			context.AddObjects.Add(schemaObject);
 
 			// don't log any of our scripting
@@ -985,15 +1000,15 @@ namespace Insight.Database.Schema
 		/// </summary>
 		/// <param name="addObjects">The objects to add.</param>
 		/// <param name="objects">The entire schema. Needed for AutoProcs.</param>
-		private void AddObjects(List<SchemaObject> addObjects, IEnumerable<SchemaObject> objects)
+		private void AddObjects(InstallContext context)
 		{
 			// create objects
-			foreach (SchemaObject schemaObject in addObjects)
+			foreach (SchemaObject schemaObject in context.AddObjects)
 			{
 				if (CreatingObject != null)
 					CreatingObject(this, new SchemaEventArgs(SchemaEventType.BeforeCreate, schemaObject));
 
-				schemaObject.Install(_connection, objects);
+				schemaObject.Install(_connection, context.SchemaObjects);
 
 				if (CreatedObject != null)
 					CreatedObject(this, new SchemaEventArgs(SchemaEventType.AfterCreate, schemaObject));
@@ -1046,24 +1061,6 @@ namespace Insight.Database.Schema
 		#endregion
 
         #region Internal Helper Methods
-		/// Get the objects in the order that they need to be created.
-		/// </summary>
-		/// <param name="schema">The schema to sort.</param>
-		/// <returns>The schema objects in the order that they need to be created.</returns>
-		private static List<SchemaObject> OrderSchemaObjects(IEnumerable<SchemaObject> schema)
-		{
-			// get the list of objects
-			List<SchemaObject> schemaObjects = schema.ToList();
-			for (int i = 0; i < schemaObjects.Count; i++)
-				schemaObjects[i].OriginalOrder = i;
-
-			// sort the list of objects in installation order
-			// first compare by type, then original order, then by name
-			schemaObjects.Sort(CompareByInstallOrder);
-
-			return schemaObjects;
-		}
-
 		/// <summary>
 		/// Compares two registry entry objects to determine the appropriate installation order.
 		/// </summary>

@@ -445,10 +445,10 @@ namespace Insight.Database.Schema
 				foreach (string sql in command.CommandText.Split(new string[] { "GO" }, StringSplitOptions.RemoveEmptyEntries))
 					connection.ExecuteSql(sql);
 			}
-			catch (SqlException e)
+			catch (SqlException)
 			{
-				Console.WriteLine ("WARNING: {0}", e.Message);
-				//throw;
+				// we used to just warn here, but if you let this go, we can be dropping dependencies that we don't expect to
+				throw;
 			}
 		}
         #endregion
