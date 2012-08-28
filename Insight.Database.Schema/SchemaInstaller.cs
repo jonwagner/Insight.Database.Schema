@@ -208,8 +208,12 @@ namespace Insight.Database.Schema
 			// azure doesn't support filegroups or partitions, so we need to know if we are on azure
 			context.IsAzure = _connection.ExecuteScalarSql<bool>("SELECT CONVERT(bit, CASE WHEN SERVERPROPERTY('edition') = 'SQL Azure' THEN 1 ELSE 0 END)", Parameters.Empty);
 
-			using (TransactionScope transaction = new TransactionScope(TransactionScopeOption.Required, new TimeSpan(1, 0, 0, 0, 0)))
+			// NOTE: we can't use System.Transactions.TransactionScope here, because certain operations cause SQL server to commit internal data structures
+			// and then if an exception is thrown, our registry changes wouldn't be in sync with the database.
+			try
 			{
+				_connection.ExecuteSql("BEGIN TRANSACTION");
+
 				// load the schema registry from the database
 				context.SchemaRegistry = new SchemaRegistry(_connection, schemaGroup);
 
@@ -245,7 +249,13 @@ namespace Insight.Database.Schema
 				context.SchemaRegistry.Update(context.SchemaObjects);
 
 				// complete the changes
-				transaction.Complete();
+				_connection.ExecuteSql("COMMIT");
+			}
+			catch
+			{
+				_connection.ExecuteSql("ROLLBACK");
+
+				throw;
 			}
 		}
 
