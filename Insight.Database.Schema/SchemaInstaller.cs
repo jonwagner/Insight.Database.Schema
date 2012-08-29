@@ -256,7 +256,8 @@ namespace Insight.Database.Schema
 				// rollback the transaction
 				// this shouldn't fail
 				// if it does, then the outer application may need to roll it back
-				_connection.ExecuteSql("ROLLBACK");
+				try { _connection.ExecuteSql("ROLLBACK"); }
+				catch (SqlException) { }
 
 				throw;
 			}
