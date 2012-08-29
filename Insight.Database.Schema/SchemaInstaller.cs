@@ -251,8 +251,11 @@ namespace Insight.Database.Schema
 				// complete the changes
 				_connection.ExecuteSql("COMMIT");
 			}
-			catch
+			catch (Exception)
 			{
+				// rollback the transaction
+				// this shouldn't fail
+				// if it does, then the outer application may need to roll it back
 				_connection.ExecuteSql("ROLLBACK");
 
 				throw;
@@ -408,9 +411,8 @@ namespace Insight.Database.Schema
 				if (oldDataSpace != newDataSpace)
 					throw new SchemaException(String.Format(CultureInfo.InvariantCulture, "Cannot move table {0} to another filegroup or partition", oldTableName));
 
-				// script constraints before columns because constraints depend on columns
-				ScriptConstraints(context, oldTableName, newTableName);
-				ScriptColumns(context, schemaObject, oldTableName, newTableName);
+				// update the columns and constraints
+				ScriptColumnsAndConstraints(context, schemaObject, oldTableName, newTableName);
 			}
 			finally
 			{
@@ -431,14 +433,14 @@ namespace Insight.Database.Schema
 		private static Regex constraintRegex = new Regex(String.Format(CultureInfo.InvariantCulture, @"CONSTRAINT\s+({0})", SqlParser.SqlNameExpression), RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
 		/// <summary>
-		/// Script changes to a table column.
+		/// Script constraints on a table. This currently only handles defaults.
 		/// </summary>
 		/// <param name="context">The installation context.</param>
-		/// <param name="schemaObject">The table object that we are modifying.</param>
-		/// <param name="oldTableName">The old name of the table.</param>
-		/// <param name="newTableName">The new name of the table.</param>
-		private void ScriptColumns(InstallContext context, SchemaObject schemaObject, string oldTableName, string newTableName)
+		/// <param name="oldTableName">The name of the old table.</param>
+		/// <param name="newTableName">The name of the new table.</param>
+		private void ScriptColumnsAndConstraints(InstallContext context, SchemaObject schemaObject, string oldTableName, string newTableName)
 		{
+			#region Detect Column Changes
 			Func<dynamic, dynamic, bool> compareColumns = (dynamic c1, dynamic c2) => (c1.Name == c2.Name);
 			Func<dynamic, dynamic, bool> areColumnsEqual = (dynamic c1, dynamic c2) =>
 				c1.TypeName == c2.TypeName &&
@@ -449,23 +451,36 @@ namespace Insight.Database.Schema
 				c1.IsIdentity == c2.IsIdentity &&
 				c1.IdentitySeed == c2.IdentitySeed &&
 				c1.IdentityIncrement == c2.IdentityIncrement &&
-				c1.Definition == c2.Definition;
-
+				c1.Definition == c2.Definition
+				;
+			Func<dynamic, dynamic, bool> areDefaultsEqual = (dynamic c1, dynamic c2) =>
+				((c1.DefaultName == c2.DefaultName) || (c1.DefaultIsSystemNamed == true && c2.DefaultIsSystemNamed == true)) &&
+				c1.DefaultDefinition == c2.DefaultDefinition
+				;
+			Func<dynamic, string> getConstraintName = (dynamic c) => SqlParser.FormatSqlName(oldTableName) + "." + SqlParser.FormatSqlName(c.Name);
 			// get the columns for each of the tables
 			var oldColumns = GetColumnsForTable(oldTableName);
 			var newColumns = GetColumnsForTable(newTableName);
 
+			// if we are planning on dropping the constraint on a column, then clear it from the old column definition
+			foreach (dynamic oldColumn in oldColumns.Where(c => context.DropObjects.Any(d => d.ObjectName == getConstraintName(c))))
+			{
+				oldColumn.DefaultName = null;
+				oldColumn.DefaultIsSystemNamed = false;
+			}
+
+			// calculate which columns changed
 			var missingColumns = oldColumns.Except(newColumns, compareColumns).ToList();
 			var addColumns = newColumns.Except(oldColumns, compareColumns).ToList();
-
-			// calculate which ones changed and add them to both lists
 			var changedColumns = newColumns.Where((dynamic cc) =>
 			{
 				dynamic oldColumn = oldColumns.FirstOrDefault(oc => compareColumns(cc, oc));
 
-				return (oldColumn != null) && !areColumnsEqual(oldColumn, cc);
+				return (oldColumn != null) && (!areColumnsEqual(oldColumn, cc) || !areDefaultsEqual(oldColumn, cc));
 			}).ToList();
+			#endregion
 
+			#region Change Columns
 			// if we want to modify a computed column, we have to drop/add it
 			var changedComputedColumns = changedColumns.Where(c => c.Definition != null).ToList();
 			foreach (var cc in changedComputedColumns)
@@ -478,6 +493,15 @@ namespace Insight.Database.Schema
 			// delete old columns - this should be pretty free
 			if (missingColumns.Any())
 			{
+				// if the column has a default, drop it
+				foreach (dynamic oldColumn in missingColumns.Where(c => c.DefaultName != null))
+				{
+					// script the default drop
+					string dropConstraint = String.Format("ALTER TABLE {0} DROP CONSTRAINT {1}", SqlParser.FormatSqlName(oldTableName), SqlParser.FormatSqlName(oldColumn.DefaultName));
+					context.AddObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, dropConstraint));
+				}
+
+				// script the column drop
 				StringBuilder sb = new StringBuilder();
 				sb.AppendFormat("ALTER TABLE {0}", SqlParser.FormatSqlName(oldTableName));
 				sb.Append(" DROP");
@@ -485,83 +509,58 @@ namespace Insight.Database.Schema
 				context.AddObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
 			}
 
-			// add new columns - this is free when the columns are nullable
+			// add new columns - this is free when the columns are nullable and possibly with a default
 			if (addColumns.Any())
 			{
 				StringBuilder sb = new StringBuilder();
 				sb.AppendFormat("ALTER TABLE {0}", SqlParser.FormatSqlName(oldTableName));
 				sb.Append(" ADD ");
-				sb.AppendLine(String.Join(", ", addColumns.Select((dynamic o) => GetColumnDefinition(o))));
+				sb.AppendLine(String.Join(", ", addColumns.Select((dynamic o) => GetColumnDefinition(o) + GetDefaultDefinition(o))));
 				context.AddObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
 			}
 
-			// alter columns
+			// alter columns - either the definition or the default
 			foreach (dynamic column in changedColumns)
 			{
 				// find any indexes that are on that column
 				ScriptIndexes(context, schemaObject, column.Name);
 
-				// script the alter
-				StringBuilder sb = new StringBuilder();
-				sb.AppendFormat("ALTER TABLE {0} ALTER COLUMN ", SqlParser.FormatSqlName(oldTableName));
-				sb.AppendFormat(GetColumnDefinition(column));
-				context.AddObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
-			}
-		}
+				// find the old column
+				dynamic oldColumn = oldColumns.First(oc => compareColumns(column, oc));
 
-		/// <summary>
-		/// Script constraints on a table. This currently only handles defaults.
-		/// </summary>
-		/// <param name="context">The installation context.</param>
-		/// <param name="oldTableName">The name of the old table.</param>
-		/// <param name="newTableName">The name of the new table.</param>
-		private void ScriptConstraints(InstallContext context, string oldTableName, string newTableName)
-		{
-			// compare constraints by column then by name (if they are named)
-			Func<dynamic, dynamic, bool> compareConstraints = (dynamic c1, dynamic c2) => (c1.ColumnID == c2.ColumnID) && ((c1.Name == c2.Name) || (c1.IsSystemNamed && c2.IsSystemNamed));
-			Func<dynamic, string> getConstraintName = (dynamic c) => SqlParser.FormatSqlName(oldTableName) + "." + SqlParser.FormatSqlName(c.ColumnName);
-
-			// go through all of the system-named constraints on the table
-			// filter out any old constraints that we are dropping because we dropped the explicit constraint
-			var oldConstraints = GetConstraintsForTable(oldTableName)
-				.Where(c => !context.SchemaRegistry.Contains(getConstraintName(c)))
-				.ToList();
-			var newConstraints = GetConstraintsForTable(newTableName);
-
-			// detect missing and new constraints
-			var missingConstraints = oldConstraints.Except(newConstraints, compareConstraints).ToList();
-			var addConstraints = newConstraints.Except(oldConstraints, compareConstraints).ToList();
-
-			// calculate which ones changed and add them to both lists
-			var changedConstraints = newConstraints.Where((dynamic cc) =>
+				// if the columns aren't equal then alter the column
+				if (!areColumnsEqual(column, oldColumn))
 				{
-					dynamic oldConstraint = oldConstraints.FirstOrDefault(oc => compareConstraints(cc, oc));
+					StringBuilder sb = new StringBuilder();
+					sb.AppendFormat("ALTER TABLE {0} ALTER COLUMN ", SqlParser.FormatSqlName(oldTableName));
+					sb.AppendFormat(GetColumnDefinition(column));
+					context.AddObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
+				}
 
-					return (oldConstraint != null) && (oldConstraint.Definition != cc.Definition);
-				});
-			missingConstraints.AddRange(changedConstraints.Select(c => oldConstraints.First(o => compareConstraints(c, o))));
-			addConstraints.AddRange(changedConstraints);
-
-			// delete old constraints
-			if (missingConstraints.Any())
-			{
-				foreach (var missingConstraint in missingConstraints)
+				// modify the defaults
+				if (!areDefaultsEqual(column, oldColumn))
 				{
-					var dropObject = new SchemaRegistryEntry() { Type = SchemaObjectType.Default, ObjectName = SqlParser.FormatSqlName(oldTableName) + "." + SqlParser.FormatSqlName(missingConstraint.ColumnName) }; 
-					if (!context.DropObjects.Any(o => o.ObjectName == dropObject.ObjectName))
-						context.DropObjects.Add(dropObject);
+					// delete the old default if it exists but it's not in the registry
+					if (oldColumn.DefaultName != null && !context.SchemaRegistry.Contains(getConstraintName(oldColumn)))
+					{
+						// script the default drop
+						string dropConstraint = String.Format("ALTER TABLE {0} DROP CONSTRAINT {1}", SqlParser.FormatSqlName(oldTableName), SqlParser.FormatSqlName(oldColumn.DefaultName));
+						context.AddObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, dropConstraint));
+					}
+
+					// add the new default if we want one
+					if (column.DefaultName != null)
+					{
+						// script the add
+						StringBuilder sb = new StringBuilder();
+						sb.AppendFormat("ALTER TABLE {0} ADD ", SqlParser.FormatSqlName(oldTableName));
+						sb.AppendFormat(GetDefaultDefinition(column));
+						sb.AppendFormat(" FOR {0}", SqlParser.FormatSqlName(column.Name));
+						context.AddObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
+					}
 				}
 			}
-
-			// add new constraints
-			if (addConstraints.Any())
-			{
-				StringBuilder sb = new StringBuilder();
-				sb.AppendFormat("ALTER TABLE {0}", SqlParser.FormatSqlName(oldTableName));
-				sb.Append(" ADD");
-				sb.AppendLine(String.Join(",", addConstraints.Select((dynamic o) => GetDefaultDefinition(o))));
-				context.AddObjects.Add(new SchemaObject(SchemaObjectType.Default, oldTableName, sb.ToString()));
-			}
+			#endregion
 		}
 
 		/// <summary>
@@ -571,30 +570,15 @@ namespace Insight.Database.Schema
 		/// <returns>The list of columns on the table.</returns>
 		private IEnumerable<FastExpando> GetColumnsForTable(string tableName)
 		{
-			return _connection.QuerySql(@"SELECT Name=c.name, ColumnID=c.column_id, TypeName = t.name, MaxLength=c.max_length, Precision=c.precision, scale=c.scale, IsNullable=c.is_nullable, IsIdentity=c.is_identity, IdentitySeed=i.seed_value, IdentityIncrement=i.increment_value, Definition=cc.definition
-				FROM sys.columns c
-				JOIN sys.types t ON (c.system_type_id = t.system_type_id AND c.user_type_id = t.user_type_id)
-				LEFT JOIN sys.identity_columns i ON (c.object_id = i.object_id AND c.column_id = i.column_id)
-				LEFT JOIN sys.computed_columns cc ON (cc.object_id = c.object_id AND cc.column_id = c.column_id)
-				WHERE c.object_id = OBJECT_ID (@TableName)",
+			return _connection.QuerySql(String.Format(CultureInfo.InvariantCulture, @"SELECT Name=c.name, ColumnID=c.column_id, TypeName = t.name, MaxLength=c.max_length, Precision=c.precision, scale=c.scale, IsNullable=c.is_nullable, IsIdentity=c.is_identity, IdentitySeed=i.seed_value, IdentityIncrement=i.increment_value, Definition=cc.definition,
+				DefaultName=REPLACE(d.name, '{0}', ''), DefaultIsSystemNamed=d.is_system_named, DefaultDefinition=d.definition 
+					FROM sys.columns c
+					JOIN sys.types t ON (c.system_type_id = t.system_type_id AND c.user_type_id = t.user_type_id)
+					LEFT JOIN sys.default_constraints d ON (d.parent_object_id = c.object_id AND d.parent_column_id = c.column_id)
+					LEFT JOIN sys.identity_columns i ON (c.object_id = i.object_id AND c.column_id = i.column_id)
+					LEFT JOIN sys.computed_columns cc ON (cc.object_id = c.object_id AND cc.column_id = c.column_id)
+					WHERE c.object_id = OBJECT_ID (@TableName)", InsightTemp),
 				new { TableName = tableName });
-		}
-
-		/// <summary>
-		/// Get the constraints for a table.
-		/// </summary>
-		/// <param name="tableName">The name of the table.</param>
-		/// <returns>The list of constraints  on the table.</returns>
-		private IEnumerable<FastExpando> GetConstraintsForTable(string tableName)
-		{
-			return _connection.QuerySql(String.Format(CultureInfo.InvariantCulture, @"
-				SELECT name=REPLACE(d.Name, '{0}', ''), ColumnID=d.parent_column_id, ColumnName=c.name, TypeName=d.type_desc, IsSystemNamed=d.is_system_named, Definition=d.definition 
-					FROM sys.default_constraints d 
-					JOIN sys.columns c ON (d.parent_object_id = c.object_id AND d.parent_column_id = c.column_id)
-					WHERE d.parent_object_id = OBJECT_ID(@TableName)
-				", InsightTemp),
-				new { TableName = tableName }).ToList();
-
 		}
 
 		/// <summary>
@@ -654,15 +638,16 @@ namespace Insight.Database.Schema
 		{
 			StringBuilder sb = new StringBuilder();
 
-			// if there is an actual name, then name it
-			if (!def.IsSystemNamed)
-				sb.AppendFormat(" CONSTRAINT {0}", def.Name);
+			if (!String.IsNullOrWhiteSpace(def.DefaultName))
+			{
+				// if there is an actual name, then name it
+				if (!def.DefaultIsSystemNamed)
+					sb.AppendFormat(" CONSTRAINT {0}", def.DefaultName);
 
-			// add the definition
-			sb.Append(" DEFAULT ");
-			sb.Append(def.Definition);
-			sb.Append(" FOR ");
-			sb.Append(SqlParser.FormatSqlName(def.ColumnName));
+				// add the definition
+				sb.Append(" DEFAULT ");
+				sb.Append(def.DefaultDefinition);
+			}
 
 			return sb.ToString();
 		}

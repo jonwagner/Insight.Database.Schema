@@ -243,6 +243,10 @@ namespace Insight.Database.Schema.Tests
 			// add a computed column
 			"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](256), [OneMore] AS ID+1)",
 			"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](256), [OneMore] AS ID+2)",
+
+			// add a column with an inline default
+			"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](128), [Foo] [int] NULL)",
+			"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](128), [Foo] [int] NULL DEFAULT (0))",
 		};
 
 		private static List<string> _tableAdditionalSchema = new List<string>()
@@ -341,6 +345,28 @@ namespace Insight.Database.Schema.Tests
 				Assert.AreEqual(finalSchema.Any(s => s.Contains("DEFAULT (1)")), DefaultExists(connection, "Beer", "ID", "((1))"));
 				Assert.AreEqual(finalSchema.Any(s => s.Contains("DEFAULT ('Foo')")), DefaultExists(connection, "Beer", "Description", "('Foo')"));
 				Assert.AreEqual(finalSchema.Any(s => s.Contains("DEFAULT 'Moo'")), DefaultExists(connection, "Beer", "Description", "('Moo')"));
+			});
+		}
+
+
+		/// <summary>
+		/// There are more restrictions on modifying defaults on tables that have data in them.
+		/// </summary>
+		/// <param name="connectionString">The connection to test.</param>
+		[Test]
+		public void TestModifyingDefaultsWithData([ValueSource("ConnectionStrings")] string connectionString)
+		{
+			TestWithRollback(connectionString, connection =>
+			{
+				// set up the initial schema
+				InstallAndVerify(connection, new[] { "CREATE TABLE Beer ([ID] [int] NULL)" });
+				connection.ExecuteSql(@"INSERT INTO Beer VALUES (NULL)");
+
+				// try to convert the column to have a default
+				InstallAndVerify(connection, new[] { "CREATE TABLE Beer ([ID] [int] NULL DEFAULT (0))" });
+
+				// try to add a non nullable column with a default
+				InstallAndVerify(connection, new[] { "CREATE TABLE Beer ([ID] [int] NULL DEFAULT (0), Style [varchar](128) NOT NULL DEFAULT ('IPA'))" });
 			});
 		}
 		#endregion
