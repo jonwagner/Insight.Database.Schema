@@ -128,7 +128,9 @@ namespace Insight.Database.Schema
 				Regex regex = new Regex(String.Format(CultureInfo.InvariantCulture, @"(CREATE\s+TABLE\s+{0})|(ALTER\s+TABLE\s+{0}.*PRIMARY\s+KEY)", escapedWildcardedName));
 
 				// calculate the signature based upon the TABLE definition, plus any PRIMARY KEY definition for the table
-				string sql = String.Join(" ", objects.Where(o => regex.Match(o.Sql).Success).Select(o => o.Sql));
+				string sql = String.Join(" ", objects.Where(o => regex.Match(o.Sql).Success)
+					.Select(o => o.Sql)
+					.OrderBy(s => s));
 
 				// add a version signature so we can force updates if we need to
 				sql += VersionSignature;
