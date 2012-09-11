@@ -16,3 +16,6 @@ GO
 
 -- AUTOPROC All [Beer]
 GO
+
+GRANT ALL ON SelectBeer TO [public]
+GO

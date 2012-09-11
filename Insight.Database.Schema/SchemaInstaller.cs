@@ -39,6 +39,12 @@ namespace Insight.Database.Schema
 			// save the connection - make sure we are recording one way or another
 			_connection = connection as RecordingDbConnection ?? new RecordingDbConnection (connection);
 		}
+
+		/// <summary>
+		/// Set to true to ignore missing objects when trying to drop objects.
+		/// NOTE: a missing object may indicate a bug in dependency handling or a corrupt schema table, so this is disabled by default.
+		/// </summary>
+		public bool IgnoreMissingObjects { get; set; }
 		#endregion
 
         #region Database Utility Methods
@@ -224,8 +230,8 @@ namespace Insight.Database.Schema
 					.ToList();
 				context.DropObjects.Sort((e1, e2) => -CompareByInstallOrder(e1, e2));
 
-				// find all of the objects that are new
-				context.AddObjects = context.SchemaObjects.Where(o => !context.SchemaRegistry.Contains(o)).ToList();
+				// find all of the objects that are not in the registry and don't exist
+				context.AddObjects = context.SchemaObjects.Where(o => !context.SchemaRegistry.Contains(o) && !o.Exists(_connection)).ToList();
 
 				// find all of the objects that have changed
 				_connection.DoNotLog(() =>
@@ -233,8 +239,20 @@ namespace Insight.Database.Schema
 					// order the changes by reverse install order
 					schemaObjects.Sort((o1, o2) => -CompareByInstallOrder(o1, o2));
 
-					foreach (var change in context.SchemaObjects.Where(o => context.SchemaRegistry.Find(o) != null && context.SchemaRegistry.Find(o).Signature != o.GetSignature(_connection, schema)))
+					foreach (var change in context.SchemaObjects)
+					{
+						// if the object is in the registry and the signature matches, then there is nothing to do
+						var registryEntry = context.SchemaRegistry.Find(change);
+						if (registryEntry != null && context.SchemaRegistry.Find(change).Signature == change.GetSignature(_connection, schema))
+							continue;
+
+						// if we are already planning to add it, then it's not a change
+						// NOTE: if there is no registry entry, but the object exists, we assume the signature has changed and we try to update it
+						if (context.AddObjects.Contains(change))
+							continue;
+
 						ScriptUpdate(context, change);
+					}
 				});
 
 				// sort the objects in install order
@@ -1023,7 +1041,18 @@ namespace Insight.Database.Schema
                 if (DroppingObject != null)
 					DroppingObject(this, new SchemaEventArgs(SchemaEventType.BeforeDrop, dropObject.ObjectName));
 
-				SchemaObject.Drop(_connection, dropObject.Type, dropObject.ObjectName);
+				try
+				{
+					SchemaObject.Drop(_connection, dropObject.Type, dropObject.ObjectName);
+				}
+				catch (SqlException e)
+				{
+					if (!IgnoreMissingObjects)
+						throw;
+
+					if (DropFailed != null)
+						DropFailed(this, new SchemaEventArgs(SchemaEventType.DropFailed, dropObject.ObjectName) { Exception = e });
+				}
             }
         }
 
@@ -1034,7 +1063,7 @@ namespace Insight.Database.Schema
 		private void VerifyObjects (List<SchemaObject> schemaObjects)
 		{
 			foreach (SchemaObject schemaObject in schemaObjects)
-				if (!schemaObject.Verify(_connection))
+				if (!schemaObject.Exists(_connection))
 					throw new SchemaException(String.Format(CultureInfo.InvariantCulture, "Schema Object {0} was not in the database", schemaObject.Name));
 		}
 		#endregion
@@ -1054,6 +1083,11 @@ namespace Insight.Database.Schema
         /// Called before a SchemaObject is dropped
         /// </summary>
         public event EventHandler<SchemaEventArgs> DroppingObject;
+
+		/// <summary>
+		/// Dropping an object failed
+		/// </summary>
+		public event EventHandler<SchemaEventArgs> DropFailed;
 		#endregion
 
         #region Internal Helper Methods

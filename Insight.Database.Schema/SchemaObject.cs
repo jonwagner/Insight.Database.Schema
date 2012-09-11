@@ -111,16 +111,21 @@ namespace Insight.Database.Schema
         /// Install the object into the database
         /// </summary>
         /// <param name="connection">The database connection to use</param>
-		internal void Install(IDbConnection connection, IEnumerable<SchemaObject> objects)
+		internal void Install(RecordingDbConnection connection, IEnumerable<SchemaObject> objects)
         {
 			string sql = Sql;
 
             // for auto-procs, convert the comment into a list of stored procedures
 			if (SchemaObjectType == Schema.SchemaObjectType.AutoProc)
+			{
 				sql = new AutoProc(Name, new SqlColumnDefinitionProvider(connection), objects).Sql;
-
-            if (sql.Length == 0)
-                return;
+				if (sql.Length == 0)
+					return;
+			}
+			
+			//// if the object already exists, then drop it first
+			//if (SchemaObjectType != Schema.SchemaObjectType.Table && Exists(connection))
+			//	Drop(connection, SchemaObjectType, Name);
 
 			try
 			{
@@ -143,7 +148,7 @@ namespace Insight.Database.Schema
         /// </summary>
         /// <param name="connection">The connection to query.</param>
         /// <returns>True if the object exists, false if it doesn't.</returns>
-		internal bool Verify(RecordingDbConnection connection)
+		internal bool Exists(RecordingDbConnection connection)
 		{
 			return connection.DoNotLog(() => {
 
@@ -163,33 +168,68 @@ namespace Insight.Database.Schema
                         // check permissions by querying the permissions table
 					    Match m = Regex.Match(_name, String.Format(CultureInfo.InvariantCulture, @"(?<permission>\w+)\s+ON\s+(?<object>{0})\s+TO\s+(?<user>{0})", SqlParser.SqlNameExpression));
 
-					    var permissions = connection.QuerySql<string>(@"SELECT p.permission_name 
+					    var permissions = connection.QuerySql(@"SELECT PermissionName=p.permission_name, ObjectType=ISNULL(o.type_desc, p.class_desc)
 							    FROM sys.database_principals u
 							    JOIN sys.database_permissions p ON (u.principal_id = p.grantee_principal_id)
 							    LEFT JOIN sys.objects o ON (p.class_desc = 'OBJECT_OR_COLUMN' AND p.major_id = o.object_id)
 							    LEFT JOIN sys.types t ON (p.class_desc = 'TYPE' AND p.major_id = t.user_type_id)
-							    WHERE u.name = @UserName AND ISNULL(o.name, t.name) = @ObjectName",
+							    WHERE state_desc IN ('GRANT', 'GRANT_WITH_GRANT_OPTION') AND u.name = @UserName AND ISNULL(o.name, t.name) = @ObjectName",
 							    new 
 							    { 
 								    UserName = SqlParser.UnformatSqlName(m.Groups["user"].Value),
 								    ObjectName = SqlParser.UnformatSqlName(SqlParser.IndexNameFromFullName(m.Groups["object"].Value))
 							    });
 
+						string type = permissions.Select((dynamic p) => p.ObjectType).FirstOrDefault();
 					    string permission = m.Groups["permission"].Value.ToUpperInvariant();
+
 					    switch (permission)
 					    {
 						    case "EXEC":
-							    return permissions.Contains("EXECUTE");
+							    return permissions.Any((dynamic p) => p.PermissionName == "EXECUTE");
 
 						    case "ALL":
-							    return permissions.Any();
-					    }
+								switch (type)
+								{
+									case null:
+										// this happens on initial install when there is no database
+										return false;
 
-					    if (!permissions.Contains(permission))
-						    Console.WriteLine("foo");
+									case "SQL_STORED_PROCEDURE":
+										return permissions.Any((dynamic p) => p.PermissionName == "EXECUTE");
 
+									case "SQL_SCALAR_FUNCTION":
+										return permissions.Any((dynamic p) => p.PermissionName == "EXECUTE") &&
+											permissions.Any((dynamic p) => p.PermissionName == "REFERENCES");
 
-					    return permissions.Contains(permission);
+									case "SQL_INLINE_TABLE_VALUED_FUNCTION":
+									case "SQL_TABLE_VALUED_FUNCTION":
+									case "USER_TABLE":
+									case "VIEW":
+										return permissions.Any((dynamic p) => p.PermissionName == "REFERENCES") &&
+											permissions.Any((dynamic p) => p.PermissionName == "SELECT") &&
+											permissions.Any((dynamic p) => p.PermissionName == "INSERT") &&
+											permissions.Any((dynamic p) => p.PermissionName == "UPDATE") &&
+											permissions.Any((dynamic p) => p.PermissionName == "DELETE");
+
+									case "DATABASE":
+										return permissions.Any((dynamic p) => p.PermissionName == "BACKUP DATABASE") &&
+											permissions.Any((dynamic p) => p.PermissionName == "BACKUP LOG") &&
+											permissions.Any((dynamic p) => p.PermissionName == "CREATE DATABASE") &&
+											permissions.Any((dynamic p) => p.PermissionName == "CREATE DEFAULT") &&
+											permissions.Any((dynamic p) => p.PermissionName == "CREATE FUNCTION") &&
+											permissions.Any((dynamic p) => p.PermissionName == "CREATE PROCEDURE") &&
+											permissions.Any((dynamic p) => p.PermissionName == "CREATE RULE") &&
+											permissions.Any((dynamic p) => p.PermissionName == "CREATE TABLE") &&
+											permissions.Any((dynamic p) => p.PermissionName == "CREATE VIEW");
+
+									default:
+										throw new SchemaException(String.Format(CultureInfo.InvariantCulture, "GRANT ALL is not supported for {0} objects", type));
+								}
+
+							default:
+								return permissions.Any((dynamic p) => p.PermissionName == permission);
+						}
 
 				    case SchemaObjectType.Role:
 					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.database_principals WHERE name = '{0}' AND type = 'R'", SqlParser.UnformatSqlName(Regex.Match(Name, @"ROLE (?<name>.*)").Groups["name"].Value));
@@ -440,16 +480,8 @@ namespace Insight.Database.Schema
 					break;
 			}
 
-			try
-			{
-				foreach (string sql in command.CommandText.Split(new string[] { "GO" }, StringSplitOptions.RemoveEmptyEntries))
-					connection.ExecuteSql(sql);
-			}
-			catch (SqlException)
-			{
-				// we used to just warn here, but if you let this go, we can be dropping dependencies that we don't expect to
-				throw;
-			}
+			foreach (string sql in command.CommandText.Split(new string[] { "GO" }, StringSplitOptions.RemoveEmptyEntries))
+				connection.ExecuteSql(sql);
 		}
         #endregion
 

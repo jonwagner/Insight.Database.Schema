@@ -35,6 +35,12 @@ namespace Insight.Database.Schema
         public SchemaObject SchemaObject { get { return _schemaObject; } }
         private SchemaObject _schemaObject;
 
+		/// <summary>
+		/// In the case of a DropFailed event, the exception that was thrown.
+		/// </summary>
+		/// <value>The exception that was thrown.</value>
+		public Exception Exception { get; internal set; }
+		
         internal SchemaEventArgs (SchemaEventType eventType, string objectName)
         {
             _eventType = eventType;

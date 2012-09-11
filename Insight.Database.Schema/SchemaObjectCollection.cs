@@ -217,7 +217,7 @@ namespace Insight.Database.Schema
 			{
 				foreach (SchemaObject schemaObject in this)
 				{
-					if (!schemaObject.Verify(recordingConnection))
+					if (!schemaObject.Exists(recordingConnection))
 					{
 						throw new SchemaException(String.Format(CultureInfo.InvariantCulture, "SchemaObject {0} was not in the database", schemaObject.Name));
 					}

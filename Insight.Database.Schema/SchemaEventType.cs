@@ -16,5 +16,6 @@ namespace Insight.Database.Schema
         BeforeDrop,
         BeforeCreate,
         AfterCreate,
+		DropFailed
     }
 }

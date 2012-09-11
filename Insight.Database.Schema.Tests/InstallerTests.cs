@@ -179,7 +179,7 @@ namespace Insight.Database.Schema.Tests
 
 				// make sure all of the objects exist in the database
 				foreach (var schemaObject in schema.Select(s => new SchemaObject(s)))
-					Assert.False(schemaObject.Verify(connection), "Object {0} is not deleted from database", schemaObject.Name);
+					Assert.False(schemaObject.Exists(connection), "Object {0} is not deleted from database", schemaObject.Name);
 			});
 		}
 		#endregion
@@ -391,7 +391,7 @@ namespace Insight.Database.Schema.Tests
 					if (schemaObject.Sql.Contains("XML INDEX") && connection.ConnectionString.Contains("windows.net"))
 						continue;
 
-					Assert.True(schemaObject.Verify(connection), "Object {0} is missing from database", schemaObject.Name);
+					Assert.True(schemaObject.Exists(connection), "Object {0} is missing from database", schemaObject.Name);
 					Assert.True(registry.Contains(schemaObject), "Object {0} is missing from registry", schemaObject.Name);
 				}
 			});

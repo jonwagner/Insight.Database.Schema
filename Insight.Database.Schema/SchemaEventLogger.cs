@@ -45,6 +45,7 @@ namespace Insight.Database.Schema
             installer.DroppingObject += _onSchemaChange;
             installer.CreatingObject += _onSchemaChange;
             installer.CreatedObject += _onSchemaChange;
+			installer.DropFailed += _onSchemaChange;
         }
 
         /// <summary>
@@ -56,7 +57,8 @@ namespace Insight.Database.Schema
             installer.DroppingObject -= _onSchemaChange;
             installer.CreatingObject -= _onSchemaChange;
             installer.CreatedObject -= _onSchemaChange;
-        }
+			installer.DropFailed -= _onSchemaChange;
+		}
 
         private EventHandler<SchemaEventArgs> _onSchemaChange;
         #endregion
@@ -94,6 +96,9 @@ namespace Insight.Database.Schema
                 case SchemaEventType.AfterCreate:
                     eventName = Resources.Created;
                     break;
+				case SchemaEventType.DropFailed:
+					return String.Format(CultureInfo.CurrentCulture, "Drop Failed: {0} {1}", se.ObjectName, se.Exception.Message);
+
                 default:
                     eventName = Enum.Format (typeof (SchemaEventType), se.EventType, "G");
                     break;
