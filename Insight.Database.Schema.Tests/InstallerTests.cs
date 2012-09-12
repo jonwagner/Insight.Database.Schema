@@ -247,6 +247,9 @@ namespace Insight.Database.Schema.Tests
 			// add a column with an inline default
 			"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](128), [Foo] [int] NULL)",
 			"CREATE TABLE Beer ([ID] [int] NOT NULL, [Description][varchar](128), [Foo] [int] NULL DEFAULT (0))",
+
+			// change the case of columns
+			"CREATE TABLE Beer ([ID] [int] NOT NULL, [description][varchar](128))",
 		};
 
 		private static List<string> _tableAdditionalSchema = new List<string>()

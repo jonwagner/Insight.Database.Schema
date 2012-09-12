@@ -341,7 +341,7 @@ namespace Insight.Database.Schema
 			if (schemaObject.OriginalOrder == 0)
 			{
 				// if the object matches an existing schema object (probably), then find it and copy its installation order
-				var originalObject = context.SchemaObjects.Find(o => schemaObject.SchemaObjectType == o.SchemaObjectType && schemaObject.Name == o.Name);
+				var originalObject = context.SchemaObjects.Find(o => schemaObject.SchemaObjectType == o.SchemaObjectType && String.Compare(schemaObject.Name, o.Name, StringComparison.OrdinalIgnoreCase) == 0);
 				if (originalObject != null)
 					schemaObject.OriginalOrder = originalObject.OriginalOrder;
 				else if (context.AddObjects.Any())
@@ -460,7 +460,7 @@ namespace Insight.Database.Schema
 		private void ScriptColumnsAndConstraints(InstallContext context, SchemaObject schemaObject, string oldTableName, string newTableName)
 		{
 			#region Detect Column Changes
-			Func<dynamic, dynamic, bool> compareColumns = (dynamic c1, dynamic c2) => (c1.Name == c2.Name);
+			Func<dynamic, dynamic, bool> compareColumns = (dynamic c1, dynamic c2) => (String.Compare(c1.Name, c2.Name, StringComparison.OrdinalIgnoreCase) == 0);
 			Func<dynamic, dynamic, bool> areColumnsEqual = (dynamic c1, dynamic c2) =>
 				c1.TypeName == c2.TypeName &&
 				c1.MaxLength == c2.MaxLength &&
@@ -473,7 +473,7 @@ namespace Insight.Database.Schema
 				c1.Definition == c2.Definition
 				;
 			Func<dynamic, dynamic, bool> areDefaultsEqual = (dynamic c1, dynamic c2) =>
-				((c1.DefaultName == c2.DefaultName) || (c1.DefaultIsSystemNamed == true && c2.DefaultIsSystemNamed == true)) &&
+				((String.Compare(c1.DefaultName, c2.DefaultName, StringComparison.OrdinalIgnoreCase) == 0) || (c1.DefaultIsSystemNamed == true && c2.DefaultIsSystemNamed == true)) &&
 				c1.DefaultDefinition == c2.DefaultDefinition
 				;
 			Func<dynamic, string> getConstraintName = (dynamic c) => SqlParser.FormatSqlName(oldTableName) + "." + SqlParser.FormatSqlName(c.Name);
@@ -482,7 +482,7 @@ namespace Insight.Database.Schema
 			var newColumns = GetColumnsForTable(newTableName);
 
 			// if we are planning on dropping the constraint on a column, then clear it from the old column definition
-			foreach (dynamic oldColumn in oldColumns.Where(c => context.DropObjects.Any(d => d.ObjectName == getConstraintName(c))))
+			foreach (dynamic oldColumn in oldColumns.Where(c => context.DropObjects.Any(d => String.Compare(d.ObjectName, getConstraintName(c), StringComparison.OrdinalIgnoreCase) == 0)))
 			{
 				oldColumn.DefaultName = null;
 				oldColumn.DefaultIsSystemNamed = false;
