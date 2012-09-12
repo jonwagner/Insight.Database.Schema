@@ -123,10 +123,6 @@ namespace Insight.Database.Schema
 					return;
 			}
 			
-			//// if the object already exists, then drop it first
-			//if (SchemaObjectType != Schema.SchemaObjectType.Table && Exists(connection))
-			//	Drop(connection, SchemaObjectType, Name);
-
 			try
 			{
 				foreach (string s in _goSplit.Split(sql).Where(piece => !String.IsNullOrWhiteSpace(piece)))
@@ -355,6 +351,67 @@ namespace Insight.Database.Schema
 			});
 		}
 
+		/// <summary>
+		/// Determine if this is a type of object that we can drop.
+		/// </summary>
+		/// <param name="type">The type of the object.</param>
+		/// <returns>True if we know how to drop the object.</returns>
+		internal static bool CanDrop(SchemaObjectType type)
+		{
+			switch (type)
+			{
+				case SchemaObjectType.MasterKey:
+				case SchemaObjectType.Certificate:
+				case SchemaObjectType.SymmetricKey:
+					// don't drop as this could be a loss of data
+					return false;
+
+				case SchemaObjectType.UserScript:
+				case SchemaObjectType.UserPreScript:
+					// can't clean up user scripts
+					return false;
+			}
+
+			return true;
+		}
+
+		/// <summary>
+		/// Determine if this is a type of object that we can modify.
+		/// </summary>
+		/// <param name="type">The type of the object.</param>
+		/// <returns>True if we know how to drop the object.</returns>
+		internal bool CanModify(RecordingDbConnection connection)
+		{
+			// if we don't know how to drop it, then we can't modify it
+			if (!CanDrop(SchemaObjectType))
+				return false;
+
+			return connection.DoNotLog(() =>
+			{
+				switch (SchemaObjectType)
+				{
+					case SchemaObjectType.UserDefinedType:
+						// we can drop a udt unless it is used in a table
+						return connection.ExecuteScalarSql<int>("SELECT COUNT(*) FROM sys.types t JOIN sys.columns c ON (t.user_type_id = c.user_type_id) WHERE t.Name = @Name", new { Name = SqlParser.UnformatSqlName(Name) }) == 0;
+
+					case SchemaObjectType.PartitionFunction:
+						// we can drop a function as long as there are no schemes using it
+						return connection.ExecuteScalarSql<int>("SELECT COUNT(*) FROM sys.partition_functions p JOIN sys.partition_schemes s ON (p.function_id = s.function_id) WHERE p.name = @Name", new { Name = SqlParser.UnformatSqlName(Name) }) == 0;
+
+					case SchemaObjectType.PartitionScheme:
+						// we can drop a scheme as long as there are no schemes using it
+						return connection.ExecuteScalarSql<int>(@"SELECT COUNT(*) FROM sys.partition_schemes s 
+							WHERE s.name = @Name AND (
+								s.data_space_id IN (SELECT data_space_id FROM sys.indexes) OR 
+								s.data_space_id IN (SELECT lob_data_space_id FROM sys.tables) OR
+								s.data_space_id IN (SELECT filestream_data_space_id FROM sys.tables))
+							", new { Name = SqlParser.UnformatSqlName(Name) }) == 0;
+				}
+
+				// everything else we can handle
+				return true;
+			});
+		}
 
         /// <summary>
         /// Drop an object from the database
@@ -364,34 +421,24 @@ namespace Insight.Database.Schema
         /// <param name="objectName">The name of the object</param>
 		internal static void Drop(IDbConnection connection, SchemaObjectType type, string objectName)
         {
+			// if this is not a type we can drop then don't
+			if (!CanDrop(type))
+				return;
+
 			IDbCommand command = connection.CreateCommand();
 
             string[] split;
             string tableName;
             switch (type)
             {
-				default:
-					// don't need to drop it (e.g. scripts)
-					return;
-
                 case SchemaObjectType.Table:
                     command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP TABLE {0}", objectName);
                     break;
+
                 case SchemaObjectType.UserDefinedType:
                     command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP TYPE {0}", objectName);
                     break;
-				case SchemaObjectType.MasterKey:
-					// don't drop as this could be a loss of data
-					command.CommandText = "SELECT NULL";
-					break;
-				case SchemaObjectType.Certificate:
-					// don't drop as this could be a loss of data
-					command.CommandText = "SELECT NULL";
-					break;
-				case SchemaObjectType.SymmetricKey:
-					// don't drop as this could be a loss of data
-					command.CommandText = "SELECT NULL";
-					break;
+
 				case SchemaObjectType.Index:
                 case SchemaObjectType.PrimaryXmlIndex:
                 case SchemaObjectType.SecondaryXmlIndex:
@@ -400,6 +447,7 @@ namespace Insight.Database.Schema
                     string indexName = split[split.Length - 1];
                     command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP INDEX {1} ON {0}", tableName, indexName);
                     break;
+
                 case SchemaObjectType.PrimaryKey:
                 case SchemaObjectType.Constraint:
                 case SchemaObjectType.ForeignKey:
@@ -430,51 +478,59 @@ namespace Insight.Database.Schema
 				case SchemaObjectType.View:
                     command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP VIEW {0}", objectName);
                     break;
+
                 case SchemaObjectType.Function:
                     command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP FUNCTION {0}", objectName);
                     break;
+
                 case SchemaObjectType.StoredProcedure:
                     command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP PROCEDURE {0}", objectName);
                     break;
+
                 case SchemaObjectType.Permission:
                     // revoke a permission by replacing GRANT with REVOKE in the name
                     command.CommandText = "REVOKE " + objectName;
                     break;
+
                 case SchemaObjectType.Trigger:
                     command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP TRIGGER {0}", objectName);
                     break;
+
                 case SchemaObjectType.User:
                 case SchemaObjectType.Login:
                 case SchemaObjectType.Schema:
                 case SchemaObjectType.Role:
 					command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP {0}", objectName);
                     break;
-				case SchemaObjectType.UserScript:
-				case SchemaObjectType.UserPreScript:
-					// can't clean up user scripts
-					command.CommandText = "SELECT NULL";
-					break;
+
 				case SchemaObjectType.PartitionScheme:
 					command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP PARTITION SCHEME {0}", objectName);
 					break;
+
 				case SchemaObjectType.PartitionFunction:
 					command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP PARTITION FUNCTION {0}", objectName);
 					break;
+
 				case SchemaObjectType.Queue:
 					command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP QUEUE {0}", SqlParser.UnformatSqlName (objectName).Split (new char[] {' '}, 2) [1]);
 					break;
+
 				case SchemaObjectType.Service:
 					command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP SERVICE {0}", SqlParser.UnformatSqlName (objectName).Split (new char [] { ' ' }, 2) [1]);
 					break;
+
 				case SchemaObjectType.MessageType:
 					command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP MESSAGE TYPE {0}", objectName);
 					break;
+
 				case SchemaObjectType.Contract:
 					command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP CONTRACT {0}", objectName);
 					break;
+
 				case SchemaObjectType.BrokerPriority:
 					command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP BROKER PRIORITY {0}", objectName);
 					break;
+
 				case SchemaObjectType.AutoProc:
 					command.CommandText = new AutoProc(objectName, new SqlColumnDefinitionProvider(connection), null).DropSql;
 					break;

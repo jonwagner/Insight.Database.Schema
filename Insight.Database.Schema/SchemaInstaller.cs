@@ -44,7 +44,7 @@ namespace Insight.Database.Schema
 		/// Set to true to ignore missing objects when trying to drop objects.
 		/// NOTE: a missing object may indicate a bug in dependency handling or a corrupt schema table, so this is disabled by default.
 		/// </summary>
-		public bool IgnoreMissingObjects { get; set; }
+		public bool AllowRepair { get; set; }
 		#endregion
 
         #region Database Utility Methods
@@ -206,6 +206,8 @@ namespace Insight.Database.Schema
 			List<SchemaObject> schemaObjects = schema.Where(o => o.SchemaObjectType != SchemaObjectType.Unused).ToList();
 			for (int i = 0; i < schemaObjects.Count; i++)
 				schemaObjects[i].OriginalOrder = i;
+			// order the changes by reverse install order
+			schemaObjects.Sort((o1, o2) => -CompareByInstallOrder(o1, o2));
 
 			// get the list of objects to install, filtering out the extra crud
 			InstallContext context = new InstallContext();
@@ -236,20 +238,22 @@ namespace Insight.Database.Schema
 				// find all of the objects that have changed
 				_connection.DoNotLog(() =>
 				{
-					// order the changes by reverse install order
-					schemaObjects.Sort((o1, o2) => -CompareByInstallOrder(o1, o2));
-
-					foreach (var change in context.SchemaObjects)
+					// for anything that's not entirely new
+					foreach (var change in context.SchemaObjects.Except(context.AddObjects))
 					{
-						// if the object is in the registry and the signature matches, then there is nothing to do
+						// if the object is in the registry and the signature matches, then there is no change
 						var registryEntry = context.SchemaRegistry.Find(change);
 						if (registryEntry != null && context.SchemaRegistry.Find(change).Signature == change.GetSignature(_connection, schema))
 							continue;
 
-						// if we are already planning to add it, then it's not a change
-						// NOTE: if there is no registry entry, but the object exists, we assume the signature has changed and we try to update it
-						if (context.AddObjects.Contains(change))
+						// if the object is NOT in the registry, but already exists (we know because it's not in the add list already)
+						// then we assume it has changed
+						// UNLESS this is not a type we can drop, and we are in repair mode, we will skip it
+						if (registryEntry == null && !change.CanModify(_connection) && AllowRepair)
+						{
+							Console.WriteLine("WARNING: {0} {1} already exists in the database and cannot be modified. Assuming that it has not changed.", change.SchemaObjectType, change.Name);
 							continue;
+						}
 
 						ScriptUpdate(context, change);
 					}
@@ -1047,7 +1051,7 @@ namespace Insight.Database.Schema
 				}
 				catch (SqlException e)
 				{
-					if (!IgnoreMissingObjects)
+					if (!AllowRepair)
 						throw;
 
 					if (DropFailed != null)
