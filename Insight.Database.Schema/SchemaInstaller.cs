@@ -36,6 +36,14 @@ namespace Insight.Database.Schema
 			if (connection.State != ConnectionState.Open)
 				throw new ArgumentException("connection must be in an Open state.", "connection");
 
+			// MARS doesn't support the type of transactions we need to do
+			if (connection is SqlConnection)
+			{
+				SqlConnectionStringBuilder connectionString = new SqlConnectionStringBuilder(connection.ConnectionString);
+				if (connectionString.MultipleActiveResultSets)
+					throw new ArgumentException("connection must not use MultipleActiveResultSets=True. Please update your connection string.", "connection");
+			}
+
 			// save the connection - make sure we are recording one way or another
 			_connection = connection as RecordingDbConnection ?? new RecordingDbConnection (connection);
 		}
