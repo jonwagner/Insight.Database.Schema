@@ -15,6 +15,7 @@ namespace Insight.Database.Schema.Tests
 	[TestFixture]
 	public class InstallerTests : BaseInstallerTest
 	{
+		#region Install, Uninstall, Modify Tests
 		/// <summary>
 		/// The schemas to use for testing.
 		/// NOTE: if you create dependencies between items, put them in dependency order.
@@ -290,6 +291,7 @@ namespace Insight.Database.Schema.Tests
 			});
 		}
 		#endregion
+		#endregion
 
 		#region Column Default Tests
 		/// <summary>
@@ -371,6 +373,34 @@ namespace Insight.Database.Schema.Tests
 				// try to add a non nullable column with a default
 				InstallAndVerify(connection, new[] { "CREATE TABLE Beer ([ID] [int] NULL DEFAULT (0), Style [varchar](128) NOT NULL DEFAULT ('IPA'))" });
 			});
+		}
+		#endregion
+
+		#region Column Type Tests
+		[Test]
+		public void TestInstallingAutoProcTypes([ValueSource("ConnectionStrings")] string connectionString,
+			[Values(
+				"nvarchar(12)",
+				"nvarchar(MAX)",
+				"nchar(12)",
+				"varchar(12)",
+				"varchar(MAX)",
+				"char(12)",
+				"float",
+				"float(12)",
+				"real",
+				"numeric(18, 4)",
+				"decimal(18, 4)"
+			)] string type
+		)
+		{
+			string sql = String.Format("CREATE TABLE Insight_TypeTest ([ID] int NOT NULL, [Column] {0})", type);
+
+			TestWithRollback(connectionString, connection =>
+			{
+				// set up the initial schema
+				InstallAndVerify(connection, new [] { sql, "AUTOPROC All Insight_TypeTest", "ALTER TABLE Insight_TypeTest ADD CONSTRAINT PK_Insight_TableTest PRIMARY KEY ([ID])" });
+			});		
 		}
 		#endregion
 

@@ -86,8 +86,10 @@ namespace Insight.Database.Schema
 							break;
 
 						case "float":
+							column.SqlType += String.Format(CultureInfo.InvariantCulture, "({0})", reader["precision"].ToString());
+							break;
+
 						case "real":
-							column.SqlType += String.Format(CultureInfo.InvariantCulture, "({0}, {1})", reader["precision"].ToString());
 							break;
 
 						case "rowversion":
