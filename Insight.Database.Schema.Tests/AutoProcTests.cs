@@ -280,5 +280,20 @@ namespace Insight.Database.Schema.Tests
 			Assert.AreEqual("CREATE PROCEDURE [DeleteFoo]\r\n(\r\n\t@ID int\r\n)\r\nAS\r\nDELETE FROM [People] WHERE\r\n\t[ID]=@ID\r\n\r\nGO\r\n", p.Sql);
 		}
 		#endregion
-	}
+
+        #region Regression Tests
+        [Test]
+        public void AutoProcForTableWithoutPKShouldThrow()
+        {
+            // don't return any key columns
+            _columns.Setup(c => c.GetColumns(It.IsAny<string>())).Returns(new List<ColumnDefinition>()
+			{
+				new ColumnDefinition() { Name = "ID", SqlType = "int", IsKey = false, IsIdentity = true, IsReadOnly = true },
+			});
+
+            AutoProc p1 = new AutoProc("AUTOPROC Insert [Beer] InsertBeer", _columns.Object, null);
+            Assert.Throws<InvalidOperationException>(() => { string sql = p1.Sql; });
+        }
+        #endregion
+    }
 }

@@ -154,6 +154,10 @@ namespace Insight.Database.Schema
 		{
 			IList<ColumnDefinition> columns = _columnProvider.GetColumns(_tableName);
 
+            // we need primary keys
+            if (!columns.Any(c => c.IsKey))
+                throw new InvalidOperationException(String.Format(CultureInfo.InvariantCulture, "Cannot generate AutoProcs for a table with no primary keys ({0}).", _tableName));
+
 			// generate the sql
 			string sql = "";
 
