@@ -15,7 +15,7 @@
 	</ItemGroup>
 	<!-- This is the list of nuget package files that we need to insert version information into -->
 	<ItemGroup>
-		<NuGetFiles Include="**\*.nuspec" />
+		<NuGetFiles Include="*.nuspec" />
 	</ItemGroup>
 	<!-- This is the list of nuget package files that we need to delete when we build -->
 	<ItemGroup>
@@ -80,6 +80,8 @@
   </Target>
   <ItemGroup>
     <Net40Outputs Include="Insight.Database.Schema\bin\Release\Insight.Database.Schema.*"></Net40Outputs>
+    <Net40Outputs Include="Insight.Database.Schema\bin\Release\Insight.Database.*"></Net40Outputs>
+    <Net40Outputs Include="Insight.Database.Schema.Installer\bin\Release\InsightInstaller.exe"></Net40Outputs>
   </ItemGroup>
 
   <!-- Build the program -->
