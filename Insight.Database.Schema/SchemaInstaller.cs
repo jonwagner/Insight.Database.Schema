@@ -630,13 +630,12 @@ namespace Insight.Database.Schema
 				string typeName = column.TypeName;
 				switch (typeName)
 				{
+					case "nchar":
+					case "char":
 					case "nvarchar":
 					case "varchar":
 					case "varbinary":
-						if (column.MaxLength == -1)
-							sb.Append("(MAX)");
-						else
-							sb.AppendFormat("({0})", column.MaxLength);
+						sb.AppendFormat("({0})", SqlColumnDefinitionProvider.GetColumnLength(typeName, column.MaxLength));
 						break;
 
 					case "decimal":

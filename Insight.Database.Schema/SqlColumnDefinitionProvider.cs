@@ -74,10 +74,7 @@ namespace Insight.Database.Schema
 						case "nvarchar":
 						case "binary":
 						case "varbinary":
-							string maxLength = reader["max_length"].ToString();
-							if (maxLength == "-1")
-								maxLength = "MAX";
-							column.SqlType += String.Format(CultureInfo.InvariantCulture, "({0})", maxLength);
+							column.SqlType += String.Format(CultureInfo.InvariantCulture, "({0})", GetColumnLength(column.SqlType, Int32.Parse(reader["max_length"].ToString())));
 							break;
 
 						case "decimal":
@@ -103,6 +100,23 @@ namespace Insight.Database.Schema
 			}
 
 			return columns;
+		}
+
+		/// <summary>
+		/// Calculate the column length based on the max_length field in SQL Server.
+		/// </summary>
+		/// <param name="sqlType">The type of the column</param>
+		/// <param name="maxLength">The length in the sys.columns table.</param>
+		/// <returns>The length to use for scripting.</returns>
+		internal static string GetColumnLength(string sqlType, int maxLength)
+		{
+			if (maxLength == -1)
+				return "MAX";
+
+			if (sqlType == "nchar" || sqlType == "nvarchar")
+				maxLength /= 2;
+
+			return maxLength.ToString();
 		}
 	}
 }
