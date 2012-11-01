@@ -380,7 +380,7 @@ namespace Insight.Database.Schema
 		/// </summary>
 		/// <param name="type">The type of the object.</param>
 		/// <returns>True if we know how to drop the object.</returns>
-		internal bool CanModify(RecordingDbConnection connection)
+		internal bool CanModify(SchemaInstaller.InstallContext context, RecordingDbConnection connection)
 		{
 			// if we don't know how to drop it, then we can't modify it
 			if (!CanDrop(SchemaObjectType))
@@ -406,6 +406,16 @@ namespace Insight.Database.Schema
 								s.data_space_id IN (SELECT lob_data_space_id FROM sys.tables) OR
 								s.data_space_id IN (SELECT filestream_data_space_id FROM sys.tables))
 							", new { Name = SqlParser.UnformatSqlName(Name) }) == 0;
+
+					case Schema.SchemaObjectType.Index:
+					case Schema.SchemaObjectType.PrimaryKey:
+						// azure can't drop the clustered index, so we have to warn if we are attempting to modify that
+						if (context.IsAzure)
+						{
+							if (Sql.IndexOf("NONCLUSTERED", StringComparison.OrdinalIgnoreCase) == -1 && Sql.IndexOf("CLUSTERED", StringComparison.OrdinalIgnoreCase) != -1)
+								return false;
+						}
+						break;
 				}
 
 				// everything else we can handle

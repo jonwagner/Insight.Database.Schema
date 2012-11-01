@@ -257,7 +257,7 @@ namespace Insight.Database.Schema
 						// if the object is NOT in the registry, but already exists (we know because it's not in the add list already)
 						// then we assume it has changed
 						// UNLESS this is not a type we can drop, and we are in repair mode, we will skip it
-						if (registryEntry == null && !change.CanModify(_connection) && AllowRepair)
+						if (registryEntry == null && !change.CanModify(context, _connection) && AllowRepair)
 						{
 							Console.WriteLine("WARNING: {0} {1} already exists in the database and cannot be modified. Assuming that it has not changed.", change.SchemaObjectType, change.Name);
 							continue;
@@ -1153,7 +1153,7 @@ namespace Insight.Database.Schema
 		private RecordingDbConnection _connection;
 		#endregion
 
-		class InstallContext
+		internal class InstallContext
 		{
 			public SchemaRegistry SchemaRegistry;
 			public List<SchemaObject> SchemaObjects;
