@@ -703,6 +703,16 @@ namespace Insight.Database.Schema
 								WHERE u.name = @ObjectName",
 						new { ObjectName = SqlParser.UnformatSqlName(SqlParser.IndexNameFromFullName(schemaObject.Name.Split(' ')[1])) });
 			}
+			else if (schemaObject.SchemaObjectType == SchemaObjectType.AutoProc)
+			{
+				// handle permissions for autoprocs
+				foreach (var proc in new AutoProc(schemaObject.Name, new SqlColumnDefinitionProvider(_connection), context.SchemaObjects).GetProcs())
+				{
+					ScriptPermissions(context, new SchemaObject(SchemaObjectType.StoredProcedure, proc.Item2, ""));
+				}
+
+				return;
+			}
 			else
 			{
 				// get the current permissions on the object

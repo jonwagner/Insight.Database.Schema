@@ -31,6 +31,7 @@ namespace Insight.Database.Schema.Installer
             }
             catch (Exception e)
             {
+				Console.WriteLine("Error detected:");
                 Console.WriteLine(e.Message);
                 if (Verbose)
                     Console.WriteLine(e.StackTrace);

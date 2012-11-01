@@ -74,7 +74,7 @@ namespace Insight.Database.Schema
 						case "nvarchar":
 						case "binary":
 						case "varbinary":
-							column.SqlType += String.Format(CultureInfo.InvariantCulture, "({0})", GetColumnLength(column.SqlType, Int32.Parse(reader["max_length"].ToString())));
+							column.SqlType += String.Format(CultureInfo.InvariantCulture, "({0})", GetColumnLength(column.SqlType, Int32.Parse(reader["max_length"].ToString(), CultureInfo.InvariantCulture)));
 							break;
 
 						case "decimal":
@@ -116,7 +116,7 @@ namespace Insight.Database.Schema
 			if (sqlType == "nchar" || sqlType == "nvarchar")
 				maxLength /= 2;
 
-			return maxLength.ToString();
+			return maxLength.ToString(CultureInfo.InvariantCulture);
 		}
 	}
 }
