@@ -481,8 +481,8 @@ namespace Insight.Database.Schema.Tests
 					FROM sys.default_constraints d
 					JOIN sys.objects o ON (d.parent_object_id = o.object_id)
 					JOIN sys.columns c ON (d.parent_object_id = c.object_id AND d.parent_column_id = c.column_id)
-					WHERE o.name = @TableName AND c.name = @ColumnName",
-					new { TableName = table, ColumnName = column });
+					WHERE o.name = @Table AND c.name = @Column",
+					new Dictionary<string, object>() { { "Table", table }, { "Column", column } });
 
 				if (definition == null)
 					return false;

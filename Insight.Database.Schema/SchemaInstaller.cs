@@ -12,6 +12,7 @@ using System.Text.RegularExpressions;
 using System.Transactions;
 using Insight.Database.Schema.Properties;
 using System.Data.Common;
+using System.Dynamic;
 #endregion
 
 namespace Insight.Database.Schema
@@ -222,7 +223,7 @@ namespace Insight.Database.Schema
 			context.SchemaObjects = schemaObjects;
 
 			// azure doesn't support filegroups or partitions, so we need to know if we are on azure
-			context.IsAzure = _connection.ExecuteScalarSql<bool>("SELECT CONVERT(bit, CASE WHEN SERVERPROPERTY('edition') = 'SQL Azure' THEN 1 ELSE 0 END)", Parameters.Empty);
+			context.IsAzure = _connection.ExecuteScalarSql<bool>("SELECT CONVERT(bit, CASE WHEN SERVERPROPERTY('edition') = 'SQL Azure' THEN 1 ELSE 0 END)", null);
 
 			// NOTE: we can't use System.Transactions.TransactionScope here, because certain operations cause SQL server to commit internal data structures
 			// and then if an exception is thrown, our registry changes wouldn't be in sync with the database.
@@ -437,8 +438,8 @@ namespace Insight.Database.Schema
 				_connection.ExecuteSql(tempTable);
 
 				// detect if the table was created on a different data space and throw
-				var oldDataSpace = _connection.ExecuteScalarSql<int>("SELECT data_space_id FROM sys.indexes i WHERE i.object_id = OBJECT_ID(@TableName) AND type <= 1", new { TableName = oldTableName });
-				var newDataSpace = _connection.ExecuteScalarSql<int>("SELECT data_space_id FROM sys.indexes i WHERE i.object_id = OBJECT_ID(@TableName) AND type <= 1", new { TableName = newTableName });
+				var oldDataSpace = _connection.ExecuteScalarSql<int>("SELECT data_space_id FROM sys.indexes i WHERE i.object_id = OBJECT_ID(@Name) AND type <= 1", new Dictionary<string, object> { { "Name", oldTableName } });
+				var newDataSpace = _connection.ExecuteScalarSql<int>("SELECT data_space_id FROM sys.indexes i WHERE i.object_id = OBJECT_ID(@Name) AND type <= 1", new Dictionary<string, object> { { "Name", newTableName } });
 				if (oldDataSpace != newDataSpace)
 					throw new SchemaException(String.Format(CultureInfo.InvariantCulture, "Cannot move table {0} to another filegroup or partition", oldTableName));
 
@@ -488,7 +489,8 @@ namespace Insight.Database.Schema
 				((String.Compare(c1.DefaultName, c2.DefaultName, StringComparison.OrdinalIgnoreCase) == 0) || (c1.DefaultIsSystemNamed == true && c2.DefaultIsSystemNamed == true)) &&
 				c1.DefaultDefinition == c2.DefaultDefinition
 				;
-			Func<dynamic, string> getConstraintName = (dynamic c) => SqlParser.FormatSqlName(oldTableName) + "." + SqlParser.FormatSqlName(c.Name);
+			Func<dynamic, string> getConstraintName = (dynamic c) => SqlParser.FormatSqlName(oldTableName) + "." + SqlParser.FormatSqlName(c.Name);
+
 			// get the columns for each of the tables
 			var oldColumns = GetColumnsForTable(oldTableName);
 			var newColumns = GetColumnsForTable(newTableName);
@@ -599,7 +601,7 @@ namespace Insight.Database.Schema
 		/// </summary>
 		/// <param name="tableName">The name of the table.</param>
 		/// <returns>The list of columns on the table.</returns>
-		private IEnumerable<FastExpando> GetColumnsForTable(string tableName)
+		private IEnumerable<ExpandoObject> GetColumnsForTable(string tableName)
 		{
 			return _connection.QuerySql(String.Format(CultureInfo.InvariantCulture, @"SELECT Name=c.name, ColumnID=c.column_id, TypeName = t.name, MaxLength=c.max_length, Precision=c.precision, scale=c.scale, IsNullable=c.is_nullable, IsIdentity=c.is_identity, IdentitySeed=i.seed_value, IdentityIncrement=i.increment_value, Definition=cc.definition,
 				DefaultName=REPLACE(d.name, '{0}', ''), DefaultIsSystemNamed=d.is_system_named, DefaultDefinition=d.definition 
@@ -609,7 +611,7 @@ namespace Insight.Database.Schema
 					LEFT JOIN sys.identity_columns i ON (c.object_id = i.object_id AND c.column_id = i.column_id)
 					LEFT JOIN sys.computed_columns cc ON (cc.object_id = c.object_id AND cc.column_id = c.column_id)
 					WHERE c.object_id = OBJECT_ID (@TableName)", InsightTemp),
-				new { TableName = tableName });
+				new Dictionary<string, object> () { { "TableName", tableName } });
 		}
 
 		/// <summary>
@@ -690,7 +692,7 @@ namespace Insight.Database.Schema
 		/// <param name="schemaObject">The object to drop</param>
 		private void ScriptPermissions(InstallContext context, SchemaObject schemaObject)
 		{
-			IList<FastExpando> permissions = null;
+			IList<ExpandoObject> permissions = null;
 
 			if (schemaObject.SchemaObjectType == SchemaObjectType.Role)
 			{
@@ -701,7 +703,7 @@ namespace Insight.Database.Schema
 								LEFT JOIN sys.objects o ON (p.class_desc = 'OBJECT_OR_COLUMN' AND p.major_id = o.object_id)
 								LEFT JOIN sys.types t ON (p.class_desc = 'TYPE' AND p.major_id = t.user_type_id)
 								WHERE u.name = @ObjectName",
-						new { ObjectName = SqlParser.UnformatSqlName(SqlParser.IndexNameFromFullName(schemaObject.Name.Split(' ')[1])) });
+						new Dictionary<string, object>() { { "ObjectName", SqlParser.UnformatSqlName(SqlParser.IndexNameFromFullName(schemaObject.Name.Split(' ')[1])) } });
 			}
 			else if (schemaObject.SchemaObjectType == SchemaObjectType.AutoProc)
 			{
@@ -722,7 +724,7 @@ namespace Insight.Database.Schema
 								LEFT JOIN sys.objects o ON (p.class_desc = 'OBJECT_OR_COLUMN' AND p.major_id = o.object_id)
 								LEFT JOIN sys.types t ON (p.class_desc = 'TYPE' AND p.major_id = t.user_type_id)
 								WHERE ISNULL (o.name, t.name) = @ObjectName",
-						new { ObjectName = SqlParser.UnformatSqlName(schemaObject.Name) });
+						new Dictionary<string, object>() { { "ObjectName", SqlParser.UnformatSqlName(schemaObject.Name) } });
 			}
 
 			// create a new permission schema object to install for each existing permission
@@ -753,7 +755,7 @@ namespace Insight.Database.Schema
 						CASE WHEN d.referenced_class_desc = 'TYPE' THEN (SELECT user_type_id FROM sys.types t WHERE t.name = @ObjectName)
 						ELSE OBJECT_ID(@ObjectName)
 					END)",
-				new { ObjectName = SqlParser.UnformatSqlName(schemaObject.Name) });
+				new Dictionary<string, object>() { { "ObjectName", SqlParser.UnformatSqlName(schemaObject.Name) } });
 
 			foreach (dynamic dependency in dependencies)
 			{
@@ -774,14 +776,15 @@ namespace Insight.Database.Schema
 					case "SQL_TRIGGER":
 					case "VIEW":
 						// these objects can be rebuilt from the definition of the object in the database
-						dropObject = new SchemaObject(_connection.ExecuteScalarSql<string>("SELECT definition FROM sys.sql_modules WHERE object_id = OBJECT_ID(@Name)", new { Name = dependencyName }));
+						dropObject = new SchemaObject(_connection.ExecuteScalarSql<string>("SELECT definition FROM sys.sql_modules WHERE object_id = OBJECT_ID(@Name)", new Dictionary<string, object>() { { "Name", dependencyName } }));
 						break;
 
 					case "CHECK_CONSTRAINT":
 						// need to do a little work to re-create the check constraint
 						dynamic checkConstraint = _connection.QuerySql(@"SELECT TableName=o.name, ConstraintName=c.name, Definition=c.definition
 							FROM sys.check_constraints c
-							JOIN sys.objects o ON (c.parent_object_id = o.object_id) WHERE c.object_id = OBJECT_ID(@Name)", new { Name = dependencyName }).First();
+							JOIN sys.objects o ON (c.parent_object_id = o.object_id) WHERE c.object_id = OBJECT_ID(@Name)",
+							new Dictionary<string, object>() { { "Name", dependencyName } }).First();
 
 						dropObject = new SchemaObject(String.Format(
 							"ALTER TABLE {0} ADD CONSTRAINT {1} CHECK {2}",
@@ -805,7 +808,7 @@ namespace Insight.Database.Schema
 		/// <param name="schemaObject">The schemaObject to script.</param>
 		private void ScriptForeignKeys(InstallContext context, SchemaObject schemaObject)
 		{
-			IList<FastExpando> foreignKeys = null;
+			IList<ExpandoObject> foreignKeys = null;
 
 			if (schemaObject.SchemaObjectType == SchemaObjectType.PrimaryKey)
 			{
@@ -815,7 +818,7 @@ namespace Insight.Database.Schema
 					JOIN sys.objects o ON (f.parent_object_id = o.object_id)
 					JOIN sys.objects ro ON (k.parent_object_id = ro.object_id)
 					WHERE k.name = @ObjectName",
-				new { ObjectName = SqlParser.IndexNameFromFullName(schemaObject.Name) });
+				new Dictionary<string, object>() { { "ObjectName", SqlParser.IndexNameFromFullName(schemaObject.Name) } });
 			}
 
 			foreach (dynamic foreignKey in foreignKeys)
@@ -826,7 +829,7 @@ namespace Insight.Database.Schema
 						JOIN sys.columns fc ON (f.parent_object_id = fc.object_id AND f.parent_column_id = fc.column_id)
 						JOIN sys.columns kc ON (f.referenced_object_id = kc.object_id AND f.referenced_column_id = kc.column_id)
 						WHERE f.constraint_object_id = OBJECT_ID(@KeyName)",
-					new { KeyName = foreignKey.Name });
+					new Dictionary<string, object>() { { "KeyName", foreignKey.Name } });
 
 				StringBuilder sb = new StringBuilder();
 				sb.AppendFormat("ALTER TABLE {0} ADD CONSTRAINT {1} FOREIGN KEY (",
@@ -902,7 +905,7 @@ namespace Insight.Database.Schema
 			sql += @" ORDER BY Type";
 
 			// find the indexes on the table
-			var indexes = _connection.QuerySql(sql, new { ObjectName = SqlParser.UnformatSqlName(schemaObject.Name), ColumnName = columnName });
+			var indexes = _connection.QuerySql(sql, new Dictionary<string, object>() { { "ObjectName", SqlParser.UnformatSqlName(schemaObject.Name) }, { "ColumnName", columnName } });
 			foreach (dynamic index in indexes)
 			{
 				// get the columns in the key from the database
@@ -911,7 +914,7 @@ namespace Insight.Database.Schema
 					JOIN sys.index_columns ic ON (i.object_id = ic.object_id AND i.index_id = ic.index_id)
 					JOIN sys.columns c ON (ic.object_id = c.object_id AND ic.column_id = c.column_id)
 					WHERE i.name = @IndexName",
-					new { IndexName = index.Name });
+					new Dictionary<string, object>() { { "IndexName", index.Name } });
 
 				StringBuilder sb = new StringBuilder();
 				if (index.IsConstraint)
@@ -941,19 +944,19 @@ namespace Insight.Database.Schema
 					// get the partition columns (this will be empty for non-partitioned indexes)
 					if (!context.IsAzure)
 					{
-						var partitionColumns = _connection.QuerySql<string>(@"SELECT ColumnName=c.name
+						var partitionColumns = _connection.QuerySql(@"SELECT ColumnName=c.name
 								FROM sys.index_columns ic
 								JOIN sys.columns c ON (ic.object_id = c.object_id AND ic.column_id = c.column_id)
 								JOIN sys.indexes i ON (i.object_id = ic.object_id AND i.index_id = ic.index_id)
 								JOIN sys.objects o ON (i.object_id = o.object_id)
 								WHERE o.name = @TableName AND i.name = @IndexName AND ic.partition_ordinal <> 0
 								ORDER BY ic.partition_ordinal",
-							new { TableName = SqlParser.UnformatSqlName(index.TableName), IndexName = SqlParser.UnformatSqlName(index.Name) });
+							new Dictionary<string, object>() { { "TableName", SqlParser.UnformatSqlName(index.TableName) }, { "IndexName", SqlParser.UnformatSqlName(index.Name) } });
 
 						if (partitionColumns.Any())
 						{
 							sb.Append("(");
-							sb.Append(String.Join(",", partitionColumns));
+							sb.Append(String.Join(",", partitionColumns.Select((dynamic p) => p.ColumnName)));
 							sb.Append(")");
 						}
 					}
@@ -972,7 +975,7 @@ namespace Insight.Database.Schema
 		/// <param name="schemaObject">The object to script.</param>
 		private void ScriptXmlIndexes(InstallContext context, SchemaObject schemaObject)
 		{
-			IList<FastExpando> xmlIndexes;
+			IList<ExpandoObject> xmlIndexes;
 
 			if (schemaObject.SchemaObjectType == SchemaObjectType.PrimaryXmlIndex)
 			{
@@ -984,7 +987,7 @@ namespace Insight.Database.Schema
 						JOIN sys.objects o ON (i.object_id = o.object_id)
 						JOIN sys.xml_indexes p ON (p.index_id = i.using_xml_index_id)
 						WHERE p.name = @ObjectName",
-					new { ObjectName = SqlParser.IndexNameFromFullName(schemaObject.Name) });
+					new Dictionary<string, object>() { { "ObjectName", SqlParser.IndexNameFromFullName(schemaObject.Name) } });
 			}
 			else
 			{
@@ -996,7 +999,7 @@ namespace Insight.Database.Schema
 						JOIN sys.objects o ON (i.object_id = o.object_id)
 						LEFT JOIN sys.xml_indexes u ON (i.using_xml_index_id = u.index_id)
 						WHERE i.object_id = OBJECT_ID(@ObjectName)",
-					new { ObjectName = SqlParser.TableNameFromIndexName(schemaObject.Name) });
+					new Dictionary<string, object>() { { "ObjectName", SqlParser.TableNameFromIndexName(schemaObject.Name) } });
 			}
 
 			foreach (dynamic xmlIndex in xmlIndexes)
@@ -1007,7 +1010,7 @@ namespace Insight.Database.Schema
 					JOIN sys.index_columns ic ON (i.object_id = ic.object_id AND i.index_id = ic.index_id)
 					JOIN sys.columns c ON (ic.object_id = c.object_id AND ic.column_id = c.column_id)
 					WHERE i.name = @IndexName",
-					new { IndexName = xmlIndex.Name });
+					new Dictionary<string, object>() { { "IndexName", xmlIndex.Name } });
 
 				StringBuilder sb = new StringBuilder();
 				sb.AppendFormat("CREATE {0}XML INDEX {1} ON {2} (",

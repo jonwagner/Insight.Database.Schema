@@ -30,7 +30,7 @@ namespace Insight.Database.Schema
 		/// <summary>
 		/// Gets the inner connection to use to execute the database commands.
 		/// </summary>
-		private DbConnection InnerConnection { get; set; }
+		internal DbConnection InnerConnection { get; private set; }
 		#endregion
 
 		#region Constructors

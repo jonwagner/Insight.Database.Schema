@@ -164,17 +164,17 @@ namespace Insight.Database.Schema
                         // check permissions by querying the permissions table
 					    Match m = Regex.Match(_name, String.Format(CultureInfo.InvariantCulture, @"(?<permission>\w+)\s+ON\s+(?<object>{0})\s+TO\s+(?<user>{0})", SqlParser.SqlNameExpression));
 
-					    var permissions = connection.QuerySql(@"SELECT PermissionName=p.permission_name, ObjectType=ISNULL(o.type_desc, p.class_desc)
+						var permissions = connection.QuerySql(@"SELECT PermissionName=p.permission_name, ObjectType=ISNULL(o.type_desc, p.class_desc)
 							    FROM sys.database_principals u
 							    JOIN sys.database_permissions p ON (u.principal_id = p.grantee_principal_id)
 							    LEFT JOIN sys.objects o ON (p.class_desc = 'OBJECT_OR_COLUMN' AND p.major_id = o.object_id)
 							    LEFT JOIN sys.types t ON (p.class_desc = 'TYPE' AND p.major_id = t.user_type_id)
 							    WHERE state_desc IN ('GRANT', 'GRANT_WITH_GRANT_OPTION') AND u.name = @UserName AND ISNULL(o.name, t.name) = @ObjectName",
-							    new 
-							    { 
-								    UserName = SqlParser.UnformatSqlName(m.Groups["user"].Value),
-								    ObjectName = SqlParser.UnformatSqlName(SqlParser.IndexNameFromFullName(m.Groups["object"].Value))
-							    });
+								new Dictionary<string, object>()
+								{ 
+									{ "UserName", SqlParser.UnformatSqlName(m.Groups["user"].Value) },
+									{ "ObjectName", SqlParser.UnformatSqlName(SqlParser.IndexNameFromFullName(m.Groups["object"].Value)) }
+								});
 
 						string type = permissions.Select((dynamic p) => p.ObjectType).FirstOrDefault();
 					    string permission = m.Groups["permission"].Value.ToUpperInvariant();
@@ -292,11 +292,11 @@ namespace Insight.Database.Schema
 						    {
 							    case AutoProc.ProcTypes.Table:
 							    case AutoProc.ProcTypes.IdTable:
-								    count = connection.ExecuteScalarSql<int>("SELECT COUNT (*) FROM sys.types WHERE name = @ProcName", new { ProcName = SqlParser.UnformatSqlName(tuple.Item2) });
+									count = connection.ExecuteScalarSql<int>("SELECT COUNT (*) FROM sys.types WHERE name = @Name", new Dictionary<string, object>() { { "Name", SqlParser.UnformatSqlName(tuple.Item2) } });
 								    break;
 
 							    default:
-								    count = connection.ExecuteScalarSql<int>("SELECT COUNT (*) FROM sys.objects WHERE name = @ProcName", new { ProcName = SqlParser.UnformatSqlName(tuple.Item2) });
+									count = connection.ExecuteScalarSql<int>("SELECT COUNT (*) FROM sys.objects WHERE name = @Name", new Dictionary<string, object>() { { "Name", SqlParser.UnformatSqlName(tuple.Item2) } });
 								    break;
 						    }
 						    return count > 0;
@@ -347,7 +347,7 @@ namespace Insight.Database.Schema
 			    }
 
 			    // execute the query
-			    return (int)connection.ExecuteScalarSql<int>(command) > 0;
+			    return (int)connection.ExecuteScalarSql<int>(command, null) > 0;
 			});
 		}
 
@@ -392,11 +392,11 @@ namespace Insight.Database.Schema
 				{
 					case SchemaObjectType.UserDefinedType:
 						// we can drop a udt unless it is used in a table
-						return connection.ExecuteScalarSql<int>("SELECT COUNT(*) FROM sys.types t JOIN sys.columns c ON (t.user_type_id = c.user_type_id) WHERE t.Name = @Name", new { Name = SqlParser.UnformatSqlName(Name) }) == 0;
+						return connection.ExecuteScalarSql<int>("SELECT COUNT(*) FROM sys.types t JOIN sys.columns c ON (t.user_type_id = c.user_type_id) WHERE t.Name = @Name", new Dictionary<string, object>() { { "Name", SqlParser.UnformatSqlName(Name) } }) == 0;
 
 					case SchemaObjectType.PartitionFunction:
 						// we can drop a function as long as there are no schemes using it
-						return connection.ExecuteScalarSql<int>("SELECT COUNT(*) FROM sys.partition_functions p JOIN sys.partition_schemes s ON (p.function_id = s.function_id) WHERE p.name = @Name", new { Name = SqlParser.UnformatSqlName(Name) }) == 0;
+						return connection.ExecuteScalarSql<int>("SELECT COUNT(*) FROM sys.partition_functions p JOIN sys.partition_schemes s ON (p.function_id = s.function_id) WHERE p.name = @Name", new Dictionary<string, object>() { { "Name", SqlParser.UnformatSqlName(Name) } }) == 0;
 
 					case SchemaObjectType.PartitionScheme:
 						// we can drop a scheme as long as there are no schemes using it
@@ -405,7 +405,7 @@ namespace Insight.Database.Schema
 								s.data_space_id IN (SELECT data_space_id FROM sys.indexes) OR 
 								s.data_space_id IN (SELECT lob_data_space_id FROM sys.tables) OR
 								s.data_space_id IN (SELECT filestream_data_space_id FROM sys.tables))
-							", new { Name = SqlParser.UnformatSqlName(Name) }) == 0;
+							", new Dictionary<string, object>() { { "Name", SqlParser.UnformatSqlName(Name) } }) == 0;
 
 					case Schema.SchemaObjectType.Index:
 					case Schema.SchemaObjectType.PrimaryKey:

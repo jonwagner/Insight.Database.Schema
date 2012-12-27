@@ -7,7 +7,7 @@ using NUnit.Framework;
 using System.Transactions;
 using System.Configuration;
 using System.Data.SqlClient;
-using Insight.Database;
+using Insight.Database.Schema;
 using System.Data.Common;
 using Moq;
 
@@ -28,7 +28,7 @@ namespace Insight.Database.Schema.Tests
 				SchemaRegistry registry = new SchemaRegistry(connection, TestSchemaGroup);
 
 				// make sure the table exists
-				Assert.AreEqual(1, connection.ExecuteScalarSql<int>("SELECT COUNT(*) FROM sys.objects WHERE name = @registryTable", new { registryTable = SchemaRegistry.SchemaRegistryTableName }));
+				Assert.AreEqual(1, connection.ExecuteScalarSql<int>("SELECT COUNT(*) FROM sys.objects WHERE name = @Name", new Dictionary<string, object> () { { "Name", SchemaRegistry.SchemaRegistryTableName } }));
 
 				// make sure the entries are empty
 				Assert.AreEqual(0, registry.Entries.Count);

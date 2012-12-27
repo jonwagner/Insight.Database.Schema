@@ -37,7 +37,17 @@ namespace Insight.Database.Schema
 			// load in the entries from the database
 			Connection.DoNotLog(() =>
 			{
-				Entries = Connection.QuerySql<SchemaRegistryEntry>(String.Format(CultureInfo.InvariantCulture, "SELECT * FROM [{0}] WHERE SchemaGroup = @SchemaGroup", SchemaRegistryTableName), new { SchemaGroup = schemaGroup });
+				Entries = Connection.QuerySql(
+					String.Format(CultureInfo.InvariantCulture, "SELECT * FROM [{0}] WHERE SchemaGroup = @SchemaGroup", SchemaRegistryTableName),
+					new Dictionary<string, object>() { { "SchemaGroup", schemaGroup } }).Select(
+					(dynamic e) => new SchemaRegistryEntry()
+					{
+						SchemaGroup = e.SchemaGroup,
+						ObjectName = e.ObjectName,
+						Signature = e.Signature,
+						Type = (SchemaObjectType)Enum.Parse(typeof(SchemaObjectType), e.Type),
+						OriginalOrder = e.OriginalOrder
+					}).ToList();
 
 				// automatically handle the old format for entries
 				// WAS: [ROLE foo]

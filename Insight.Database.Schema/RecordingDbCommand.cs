@@ -136,7 +136,7 @@ namespace Insight.Database.Schema
 
 			set
 			{
-				InnerCommand.Connection = value;
+				InnerCommand.Connection = value.Unwrap();
 			}
 		}
 
