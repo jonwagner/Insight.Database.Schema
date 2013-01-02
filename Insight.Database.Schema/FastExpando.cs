@@ -248,17 +248,5 @@ namespace Insight.Database.Schema
 			return other;
 		}
 		#endregion
-
-		#region Private Methods
-		/// <summary>
-		/// Sets the value of a property.
-		/// </summary>
-		/// <param name="name">The name of the property.</param>
-		/// <param name="value">The value of the property.</param>
-		private void SetValue(string name, object value)
-		{
-			data[name.ToUpperInvariant()] = value;
-		}
-		#endregion
 	}
 }
