@@ -601,10 +601,10 @@ namespace Insight.Database.Schema
 		/// </summary>
 		/// <param name="tableName">The name of the table.</param>
 		/// <returns>The list of columns on the table.</returns>
-		private IEnumerable<ExpandoObject> GetColumnsForTable(string tableName)
+		private IEnumerable<FastExpando> GetColumnsForTable(string tableName)
 		{
-			return _connection.QuerySql(String.Format(CultureInfo.InvariantCulture, @"SELECT Name=c.name, ColumnID=c.column_id, TypeName = t.name, MaxLength=c.max_length, Precision=c.precision, scale=c.scale, IsNullable=c.is_nullable, IsIdentity=c.is_identity, IdentitySeed=i.seed_value, IdentityIncrement=i.increment_value, Definition=cc.definition,
-				DefaultName=REPLACE(d.name, '{0}', ''), DefaultIsSystemNamed=d.is_system_named, DefaultDefinition=d.definition 
+			return _connection.QuerySql(String.Format(CultureInfo.InvariantCulture, @"SELECT Name=c.name, ColumnID=c.column_id, TypeName = t.name, MaxLength=c.max_length, Precision=c.precision, Scale=c.scale, IsNullable=c.is_nullable, IsIdentity=c.is_identity, IdentitySeed=i.seed_value, IdentityIncrement=i.increment_value, Definition=cc.definition,
+				DefaultName=REPLACE(d.name, '{0}', ''), DefaultIsSystemNamed=d.is_system_named, DefaultDefinition=d.definition
 					FROM sys.columns c
 					JOIN sys.types t ON (c.system_type_id = t.system_type_id AND c.user_type_id = t.user_type_id)
 					LEFT JOIN sys.default_constraints d ON (d.parent_object_id = c.object_id AND d.parent_column_id = c.column_id)
@@ -692,7 +692,7 @@ namespace Insight.Database.Schema
 		/// <param name="schemaObject">The object to drop</param>
 		private void ScriptPermissions(InstallContext context, SchemaObject schemaObject)
 		{
-			IList<ExpandoObject> permissions = null;
+			IList<FastExpando> permissions = null;
 
 			if (schemaObject.SchemaObjectType == SchemaObjectType.Role)
 			{
@@ -808,7 +808,7 @@ namespace Insight.Database.Schema
 		/// <param name="schemaObject">The schemaObject to script.</param>
 		private void ScriptForeignKeys(InstallContext context, SchemaObject schemaObject)
 		{
-			IList<ExpandoObject> foreignKeys = null;
+			IList<FastExpando> foreignKeys = null;
 
 			if (schemaObject.SchemaObjectType == SchemaObjectType.PrimaryKey)
 			{
@@ -975,7 +975,7 @@ namespace Insight.Database.Schema
 		/// <param name="schemaObject">The object to script.</param>
 		private void ScriptXmlIndexes(InstallContext context, SchemaObject schemaObject)
 		{
-			IList<ExpandoObject> xmlIndexes;
+			IList<FastExpando> xmlIndexes;
 
 			if (schemaObject.SchemaObjectType == SchemaObjectType.PrimaryXmlIndex)
 			{

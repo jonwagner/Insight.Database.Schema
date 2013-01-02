@@ -361,6 +361,10 @@ namespace Insight.Database.Schema.Tests
 		[Test]
 		public void TestModifyingDefaultsWithData([ValueSource("ConnectionStrings")] string connectionString)
 		{
+			// azure requires clustered indexes
+			if (connectionString.IsAzure())
+				return;
+
 			TestWithRollback(connectionString, connection =>
 			{
 				// set up the initial schema
@@ -421,7 +425,7 @@ namespace Insight.Database.Schema.Tests
 				foreach (var schemaObject in schema.Select(s => new SchemaObject(s)))
 				{
 					// azure doesn't support xml index, so lets comment those out
-					if (schemaObject.Sql.Contains("XML INDEX") && connection.ConnectionString.Contains("windows.net"))
+					if (schemaObject.Sql.Contains("XML INDEX") && connection.IsAzure())
 						continue;
 
 					Assert.True(schemaObject.Exists(connection), "Object {0} is missing from database", schemaObject.Name);
@@ -444,7 +448,7 @@ namespace Insight.Database.Schema.Tests
 				foreach (string s in sql)
 				{
 					// azure doesn't support xml index, so lets comment those out
-					if (s.Contains("XML INDEX") && connection.ConnectionString.Contains("windows.net"))
+					if (s.Contains("XML INDEX") && connection.IsAzure())
 						continue;
 
 					schema.Add(s);
