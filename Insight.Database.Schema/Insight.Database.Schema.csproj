@@ -47,6 +47,7 @@
     <Compile Include="AutoProc.cs" />
     <Compile Include="ColumnDefinition.cs" />
     <Compile Include="ConnectionExtensions.cs" />
+    <Compile Include="FastExpando.cs" />
     <Compile Include="LambdaComparer.cs" />
     <Compile Include="SchemaException.cs" />
     <Compile Include="IColumnDefinitionProvider.cs" />

@@ -53,7 +53,7 @@ namespace Insight.Database.Schema
 			return cmd.ExecuteReader();
 		}
 
-		public static IList<ExpandoObject> QuerySql(this IDbConnection connection, string sql, IDictionary<string, object> parameters)
+		public static IList<FastExpando> QuerySql(this IDbConnection connection, string sql, IDictionary<string, object> parameters)
 		{
 			var cmd = connection.CreateCommand();
 			cmd.CommandText = sql;
@@ -62,16 +62,21 @@ namespace Insight.Database.Schema
 
 			CreateParameters(parameters, cmd);
 
-			var results = new List<ExpandoObject>();
+			var results = new List<FastExpando>();
 
 			using (var reader = cmd.ExecuteReader())
 			{
 				while (reader.Read())
 				{
-					var expando = new ExpandoObject();
+					var expando = new FastExpando();
 					var dict = (IDictionary<string, object>)expando;
 					for (int i = 0; i < reader.FieldCount; i++)
-						dict[reader.GetName(i)] = reader.GetValue(i);
+					{
+						object value = reader.GetValue(i);
+						if (value == DBNull.Value)
+							value = null;
+						dict[reader.GetName(i)] = value;
+					}
 					results.Add(expando);
 				}
 			}
@@ -85,7 +90,10 @@ namespace Insight.Database.Schema
 			{
 				var p = cmd.CreateParameter();
 				p.ParameterName = "@" + pair.Key;
-				p.Value = pair.Value;
+				if (pair.Value != null)
+					p.Value = pair.Value;
+				else
+					p.Value = DBNull.Value;
 				cmd.Parameters.Add(p);
 			}
 		}
