@@ -130,10 +130,16 @@ namespace Insight.Database.Schema
                     sb.AppendLine (line);
             }
 
-            // if the file doesn't end with a GO, then we need to create one more object
-			string last = sb.ToString ().Trim();
-			if (last.Length > 0)
-				Add (last);
+            // if the file doesn't end with a GO, then we need to create one more object, 
+            // unless it's all just comments and whitespace
+            string last = sb.ToString ();
+            if(string.IsNullOrWhiteSpace (last)) return;
+
+            if (Regex.Split (last, "\r\n|\r|\n")
+                     .All (line => _sqlCommentExpression.IsMatch (line) || string.IsNullOrWhiteSpace (line))) 
+                return;
+
+            Add (last.Trim());
         }
 
 		/// <summary>
@@ -229,6 +235,11 @@ namespace Insight.Database.Schema
 		/// The Regex used to detect GO commands. GO must be on its own line.
 		/// </summary>
         private static readonly Regex _goCommandExpression = new Regex (@"^\s*GO\s*$", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
+
+        /// <summary>
+        /// The Regex used to detect comment line
+        /// </summary>
+        private static readonly Regex _sqlCommentExpression = new Regex(@"^\s*--.*", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
     }
     #endregion
 }
