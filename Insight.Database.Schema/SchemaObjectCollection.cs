@@ -132,11 +132,11 @@ namespace Insight.Database.Schema
 
             // if the file doesn't end with a GO, then we need to create one more object, 
             // unless it's all just comments and whitespace
+			// NOTE: autoprocs are currently the only types that can be fully embedded in comments
             string last = sb.ToString ();
-            if(string.IsNullOrWhiteSpace (last)) return;
-
-            if (Regex.Split (last, "\r\n|\r|\n")
-                     .All (line => _sqlCommentExpression.IsMatch (line) || string.IsNullOrWhiteSpace (line))) 
+			if (!AutoProc.AutoProcRegex.IsMatch(last) &&
+				last.Split(_lineTerminator, StringSplitOptions.RemoveEmptyEntries)
+				    .All(line => _sqlCommentExpression.IsMatch(line) || String.IsNullOrWhiteSpace(line))) 
                 return;
 
             Add (last.Trim());
@@ -240,6 +240,11 @@ namespace Insight.Database.Schema
         /// The Regex used to detect comment line
         /// </summary>
         private static readonly Regex _sqlCommentExpression = new Regex(@"^\s*--.*", RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
+
+		/// <summary>
+		/// The current environment's line terminator
+		/// </summary>
+		private static readonly string[] _lineTerminator = new string[] { Environment.NewLine };
     }
     #endregion
 }

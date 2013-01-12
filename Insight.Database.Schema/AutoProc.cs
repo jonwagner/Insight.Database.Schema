@@ -60,7 +60,12 @@ namespace Insight.Database.Schema
 		/// <summary>
 		/// The RegEx used to detect and decode an AutoProc.
 		/// </summary>
-		internal static readonly string AutoProcRegex = String.Format(CultureInfo.InvariantCulture, @"AUTOPROC\s+(?<type>\w+)\s+(?<tablename>{0})(\s+Name=(?<name>[^\s]+))?(\s+Single=(?<single>[^\s]+))?(\s+Plural=(?<plural>[^\s]+))?(\s+ExecuteAsOwner=(?<execasowner>[^\s]+))?", SqlParser.SqlNameExpression);
+		internal static readonly string AutoProcRegexString = String.Format(CultureInfo.InvariantCulture, @"AUTOPROC\s+(?<type>\w+)\s+(?<tablename>{0})(\s+Name=(?<name>[^\s]+))?(\s+Single=(?<single>[^\s]+))?(\s+Plural=(?<plural>[^\s]+))?(\s+ExecuteAsOwner=(?<execasowner>[^\s]+))?", SqlParser.SqlNameExpression);
+
+		/// <summary>
+		/// The RegEx used to detect and decode an AutoProc.
+		/// </summary>
+		internal static readonly Regex AutoProcRegex = new Regex(AutoProcRegexString);
 
 		/// <summary>
 		/// The signature of the AutoProc. This is derived from the table and the private key(s) in the script collection.
@@ -91,7 +96,7 @@ namespace Insight.Database.Schema
 			_columnProvider = columnProvider;
 
 			// break up the name into its components
-			var match = new Regex(AutoProcRegex, RegexOptions.IgnoreCase).Match(name);
+			var match = new Regex(AutoProcRegexString, RegexOptions.IgnoreCase).Match(name);
 			_type = (ProcTypes)Enum.Parse(typeof(ProcTypes), match.Groups["type"].Value);
 			_tableName = SqlParser.FormatSqlName(match.Groups["tablename"].Value);
 

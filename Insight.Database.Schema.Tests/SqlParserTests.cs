@@ -5,12 +5,14 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using System.IO;
 
 namespace Insight.Database.Schema.Tests
 {
 	[TestFixture]
 	public class SqlParserTests
 	{
+		#region Parser Tests
 		/// <summary>
 		/// Make sure that all forms of SQL names are detected properly.
 		/// </summary>
@@ -50,6 +52,40 @@ namespace Insight.Database.Schema.Tests
             if (sql == "") return;
 
             Assert.Throws<SchemaParsingException>(() => new SchemaObject(sql));
-        }
+		}
+		#endregion
+
+		#region Schema Tests
+		/// <summary>
+		/// Test that when everything after the last GO is a comment or whitespace, the last section is ignored.
+		/// UNLESS it's an autoproc, which can be embedded in comments.
+		/// </summary>
+		[Test]
+		public void TestTrailingWhiteSpaceAndComments()
+		{
+			AssertScriptCount(1, "CREATE PROC Foo AS SELECT 1");
+			AssertScriptCount(1, "CREATE PROC Foo AS SELECT 1 \n GO ");
+			AssertScriptCount(1, "CREATE PROC Foo AS SELECT 1 \n GO \n");
+			AssertScriptCount(1, "CREATE PROC Foo AS SELECT 1 \n GO \n \n");
+			AssertScriptCount(1, "CREATE PROC Foo AS SELECT 1 \n GO --comment");
+			AssertScriptCount(1, "CREATE PROC Foo AS SELECT 1 \n GO \n --comment");
+			AssertScriptCount(1, "CREATE PROC Foo AS SELECT 1 \n GO \n --comment \n");
+			AssertScriptCount(2, "CREATE PROC Foo AS SELECT 1 \n GO \n --comment \n CREATE PROC Goo AS SELECT 1 \n GO");
+
+			// autoprocs are purely comment-based, so we need to make sure they work
+			AssertScriptCount(1, "-- AUTOPROC Beer All");
+			AssertScriptCount(2, "-- AUTOPROC Beer All \n GO \n -- AUTOPROC Glasses All");
+			AssertScriptCount(2, "CREATE PROC Foo AS SELECT 1 \n GO \n -- AUTOPROC Beer All");
+			AssertScriptCount(2, "CREATE PROC Foo AS SELECT 1 \n GO \n -- AUTOPROC Beer All");
+		}
+
+		private void AssertScriptCount(int count, string sql)
+		{
+			StringReader reader = new StringReader(sql);
+			SchemaObjectCollection c = new SchemaObjectCollection();
+			c.Load(reader);
+			Assert.AreEqual(count, c.Count);
+		}
+		#endregion
 	}
 }

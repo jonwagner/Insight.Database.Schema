@@ -63,7 +63,7 @@ namespace Insight.Database.Schema
 			parsers.Add(new SqlParser(SchemaObjectType.Unused, String.Format(CultureInfo.InvariantCulture, @"SET\s+ANSI_WARNINGS", SqlNameExpression), null));
 			parsers.Add(new SqlParser(SchemaObjectType.Unused, String.Format(CultureInfo.InvariantCulture, @"SET\s+NUMERIC_ROUNDABORT", SqlNameExpression), null));
 			parsers.Add(new SqlParser(SchemaObjectType.Unused, String.Format(CultureInfo.InvariantCulture, @"ALTER\s+TABLE\s+(?<tablename>{0})\s+(WITH\s+(NO)?CHECK\s+)?(?!ADD\s+)(((CHECK\s+)?CONSTRAINT)|(DEFAULT))\s*\(?(?<name>{0})\)?", SqlNameExpression), "$1.$2"));
-			parsers.Add(new SqlParser(SchemaObjectType.AutoProc, AutoProc.AutoProcRegex, "$0"));
+			parsers.Add(new SqlParser(SchemaObjectType.AutoProc, AutoProc.AutoProcRegexString, "$0"));
 
 			// make sure that they are sorted in the order of likelihood
 			parsers.Sort((p1, p2) => p1.SchemaObjectType.CompareTo(p2.SchemaObjectType));
