@@ -102,8 +102,9 @@ namespace Insight.Database.Schema
 		/// <param name="nameTemplate">The string used to generate the resulting name</param>
 		public SqlParser(SchemaObjectType type, string pattern, string nameTemplate = "$1")
 		{
+			// NOTE: don't use compiled regex here. the expressions are too complicated for the 64-bit JIT and it takes 10x more time. really.
 			SchemaObjectType = type;
-			_regex = new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.ExplicitCapture | RegexOptions.Compiled);
+			_regex = new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.ExplicitCapture);
 			_nameTemplate = nameTemplate;
 		}
 		#endregion
