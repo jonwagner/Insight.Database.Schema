@@ -240,6 +240,17 @@ namespace Insight.Database.Schema
 		}
 
 		/// <summary>
+		/// Format a Sql Name to escape it out properly;
+		/// </summary>
+		/// <param name="name">The name to escape</param>
+		/// <param name="name2">The name to escape</param>
+		/// <returns>The escaped name</returns>
+		internal static string FormatSqlName(string name, string name2)
+		{
+			return String.Format(CultureInfo.InvariantCulture, "[{0}].[{1}]", UnformatSqlName(name), UnformatSqlName(name2));
+		}
+
+		/// <summary>
 		/// The divider between pieces of a sql name
 		/// </summary>
 		private const char _sqlNameDivider = '.';

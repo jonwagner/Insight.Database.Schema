@@ -530,8 +530,7 @@ namespace Insight.Database.Schema
 				foreach (dynamic oldColumn in missingColumns.Where(c => c.DefaultName != null))
 				{
 					// script the default drop
-					string dropConstraint = String.Format("ALTER TABLE {0} DROP CONSTRAINT {1}", SqlParser.FormatSqlName(oldTableName), SqlParser.FormatSqlName(oldColumn.DefaultName));
-					context.AddObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, dropConstraint));
+					context.DropObjects.Add(new SchemaRegistryEntry() { Type = SchemaObjectType.Default, ObjectName = SqlParser.FormatSqlName(oldTableName, oldColumn.Name) });
 				}
 
 				// script the column drop
