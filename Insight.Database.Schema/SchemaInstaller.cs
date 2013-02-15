@@ -54,6 +54,16 @@ namespace Insight.Database.Schema
 		/// NOTE: a missing object may indicate a bug in dependency handling or a corrupt schema table, so this is disabled by default.
 		/// </summary>
 		public bool AllowRepair { get; set; }
+
+		/// <summary>
+		/// Gets or sets the CommandTimeout to use for all of the commands in the installer.
+		/// The default is 30 seconds, but your installs may take longer.
+		/// </summary>
+		public int? CommandTimeout
+		{
+			get { return _connection.CommandTimeout; }
+			set { _connection.CommandTimeout = value; }
+		}
 		#endregion
 
         #region Database Utility Methods

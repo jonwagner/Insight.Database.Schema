@@ -34,7 +34,6 @@ namespace Insight.Database.Schema
 			var cmd = connection.CreateCommand();
 			cmd.CommandText = sql;
 			cmd.CommandType = CommandType.Text;
-			cmd.Connection = connection;
 
 			return cmd.ExecuteNonQuery();
 		}
@@ -44,7 +43,6 @@ namespace Insight.Database.Schema
 			var cmd = connection.CreateCommand();
 			cmd.CommandText = sql;
 			cmd.CommandType = CommandType.Text;
-			cmd.Connection = connection;
 
 			if (parameters != null)
 				CreateParameters(parameters, cmd);
@@ -57,7 +55,6 @@ namespace Insight.Database.Schema
 			var cmd = connection.CreateCommand();
 			cmd.CommandText = sql;
 			cmd.CommandType = CommandType.Text;
-			cmd.Connection = connection;
 
 			return cmd.ExecuteReader();
 		}
@@ -67,7 +64,6 @@ namespace Insight.Database.Schema
 			var cmd = connection.CreateCommand();
 			cmd.CommandText = sql;
 			cmd.CommandType = CommandType.Text;
-			cmd.Connection = connection;
 
 			CreateParameters(parameters, cmd);
 

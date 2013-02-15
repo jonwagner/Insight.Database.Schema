@@ -31,6 +31,11 @@ namespace Insight.Database.Schema
 		/// Gets the inner connection to use to execute the database commands.
 		/// </summary>
 		internal DbConnection InnerConnection { get; private set; }
+
+		/// <summary>
+		/// Specifies a default command timeout for all commands created through connection.CreateCommand.
+		/// </summary>
+		public int? CommandTimeout { get; set; }
 		#endregion
 
 		#region Constructors
@@ -161,7 +166,13 @@ namespace Insight.Database.Schema
 		/// <returns>A ReliableCommand.</returns>
 		protected override DbCommand CreateDbCommand()
 		{
-			return new RecordingDbCommand(InnerConnection.CreateCommand(), this);
+			var command = new RecordingDbCommand(InnerConnection.CreateCommand(), this);
+
+			// if we have a default command timeout, then set it on the command
+			if (CommandTimeout.HasValue)
+				command.CommandTimeout = CommandTimeout.Value;
+
+			return command;
 		}
 		#endregion
 
