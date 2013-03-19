@@ -636,7 +636,7 @@ namespace Insight.Database.Schema
 			if (column.Definition == null)
 			{
 				// this is a regular column, add in the type of the column
-				sb.AppendFormat(" {0}", column.TypeName);
+				sb.AppendFormat(" {0}", SqlParser.FormatSqlName(column.TypeName));
 
 				string typeName = column.TypeName;
 				switch (typeName)
@@ -658,7 +658,9 @@ namespace Insight.Database.Schema
 				if (column.IsIdentity)
 					sb.AppendFormat(" IDENTITY ({0}, {1})", column.IdentitySeed, column.IdentityIncrement);
 
-				if (!column.IsNullable)
+				if (column.IsNullable)
+					sb.Append(" NULL");
+				else
 					sb.Append(" NOT NULL");
 			}
 			else
