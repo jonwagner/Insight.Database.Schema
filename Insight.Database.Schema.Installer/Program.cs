@@ -23,7 +23,7 @@ namespace Insight.Database.Schema.Installer
         static bool Verbose = false;
         static bool Uninstall = false;
 
-        static void Main(string[] args)
+        static int Main(string[] args)
         {
             try
             {
@@ -35,7 +35,11 @@ namespace Insight.Database.Schema.Installer
                 Console.WriteLine(e.Message);
                 if (Verbose)
                     Console.WriteLine(e.StackTrace);
+
+				return 1;
             }
+
+			return 0;
         }
 
         /// <summary>
