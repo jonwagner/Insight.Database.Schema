@@ -1,8 +1,7 @@
 Notes for Building Insight.Database.Schema
 ==========================================
 
-* Release builds require FXCop 10.0 be installed on your system.
-* Packaging the assembly requires that NuGet.exe be in your path.
+* Build requires Psake. You can get it from http://nuget.org/packages/Psake
 * You will need to provide your own Insight.Database.Schema.Tests.dll.config file with your test connection strings. Try this one:
 
 <?xml version="1.0" encoding="utf-8" ?>

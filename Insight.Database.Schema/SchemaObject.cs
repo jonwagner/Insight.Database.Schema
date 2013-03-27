@@ -144,6 +144,7 @@ namespace Insight.Database.Schema
         /// </summary>
         /// <param name="connection">The connection to query.</param>
         /// <returns>True if the object exists, false if it doesn't.</returns>
+		[System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Maintainability", "CA1506:AvoidExcessiveClassCoupling"), System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Maintainability", "CA1505:AvoidUnmaintainableCode"), System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Maintainability", "CA1502:AvoidExcessiveComplexity")]
 		internal bool Exists(RecordingDbConnection connection)
 		{
 			return connection.DoNotLog(() => {
@@ -564,13 +565,14 @@ namespace Insight.Database.Schema
             byte[] bytes = new UnicodeEncoding ().GetBytes (s);
 
             // Create a new instance of SHA1Managed to create the hash value.
-            SHA1Managed shHash = new SHA1Managed ();
+			using (SHA1Managed shHash = new SHA1Managed())
+			{
+				// Create the hash value from the array of bytes.
+				byte[] hashValue = shHash.ComputeHash(bytes);
 
-            // Create the hash value from the array of bytes.
-            byte[] hashValue = shHash.ComputeHash (bytes);
-
-            // return the hash as a string
-            return Convert.ToBase64String (hashValue);
+				// return the hash as a string
+				return Convert.ToBase64String(hashValue);
+			}
         }
         #endregion
 

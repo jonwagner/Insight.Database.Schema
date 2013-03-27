@@ -31,6 +31,8 @@ namespace Insight.Database.Schema
 		/// <returns>True if the value was set.</returns>
 		public override bool TrySetMember(System.Dynamic.SetMemberBinder binder, object value)
 		{
+			if (binder == null) throw new ArgumentNullException("binder");
+
 			data[binder.Name.ToUpperInvariant()] = value;
 			return true;
 		}
@@ -43,6 +45,8 @@ namespace Insight.Database.Schema
 		/// <returns>True if a member was returned.</returns>
 		public override bool TryGetMember(System.Dynamic.GetMemberBinder binder, out object result)
 		{
+			if (binder == null) throw new ArgumentNullException("binder");
+
 			return data.TryGetValue(binder.Name.ToUpperInvariant(), out result);
 		}
 		#endregion
@@ -57,11 +61,15 @@ namespace Insight.Database.Schema
 		{
 			get
 			{
+				if (key == null) throw new ArgumentNullException("key");
+
 				return data[key.ToUpperInvariant()];
 			}
 
 			set
 			{
+				if (key == null) throw new ArgumentNullException("key");
+
 				data[key.ToUpperInvariant()] = value;
 			}
 		}
@@ -73,6 +81,8 @@ namespace Insight.Database.Schema
 		/// <param name="value">The value to add.</param>
 		void IDictionary<string, object>.Add(string key, object value)
 		{
+			if (key == null) throw new ArgumentNullException("key");
+
 			data[key.ToUpperInvariant()] = value;
 		}
 
@@ -83,6 +93,8 @@ namespace Insight.Database.Schema
 		/// <returns>True if the key is in the expando.</returns>
 		bool IDictionary<string, object>.ContainsKey(string key)
 		{
+			if (key == null) throw new ArgumentNullException("key");
+
 			return data.ContainsKey(key.ToUpperInvariant());
 		}
 
@@ -101,6 +113,8 @@ namespace Insight.Database.Schema
 		/// <returns>True if the item existed.</returns>
 		bool IDictionary<string, object>.Remove(string key)
 		{
+			if (key == null) throw new ArgumentNullException("key");
+
 			return data.Remove(key.ToUpperInvariant());
 		}
 
@@ -112,6 +126,8 @@ namespace Insight.Database.Schema
 		/// <returns>True if an item was found.</returns>
 		bool IDictionary<string, object>.TryGetValue(string key, out object value)
 		{
+			if (key == null) throw new ArgumentNullException("key");
+
 			return data.TryGetValue(key.ToUpperInvariant(), out value);
 		}
 

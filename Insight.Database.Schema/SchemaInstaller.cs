@@ -21,7 +21,8 @@ namespace Insight.Database.Schema
     /// <summary>
     /// Installs, upgrades, and uninstalls objects from a database
     /// </summary>
-    public sealed class SchemaInstaller
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Design", "CA1001:TypesThatOwnDisposableFieldsShouldBeDisposable"), System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Maintainability", "CA1506:AvoidExcessiveClassCoupling")]
+	public sealed class SchemaInstaller
     {
 		#region Constructors
 		/// <summary>
@@ -81,8 +82,8 @@ namespace Insight.Database.Schema
 			string databaseName = builder.InitialCatalog;
 
 			using (var connection = OpenMasterConnection(connectionString))
+			using (var command = new SqlCommand("SELECT COUNT (*) FROM master.sys.databases WHERE name = @DatabaseName", connection))
 			{
-				var command = new SqlCommand("SELECT COUNT (*) FROM master.sys.databases WHERE name = @DatabaseName", connection);
 				command.Parameters.AddWithValue("@DatabaseName", databaseName);
 
 				return ((int)command.ExecuteScalar()) > 0;
@@ -107,8 +108,8 @@ namespace Insight.Database.Schema
 			string databaseName = builder.InitialCatalog;
 
 			using (var connection = OpenMasterConnection(connectionString))
+			using (var command = new SqlCommand(String.Format(CultureInfo.InvariantCulture, "CREATE DATABASE [{0}]", databaseName), connection))
 			{
-				var command = new SqlCommand(String.Format(CultureInfo.InvariantCulture, "CREATE DATABASE [{0}]", databaseName), connection);
 				command.ExecuteNonQuery();
             }
 
@@ -139,8 +140,10 @@ namespace Insight.Database.Schema
                 // connection.
 				try
 				{
-					var command = new SqlCommand(String.Format(CultureInfo.InvariantCulture, "ALTER DATABASE [{0}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE", databaseName), connection);
-					command.ExecuteNonQuery();
+					using (var command = new SqlCommand(String.Format(CultureInfo.InvariantCulture, "ALTER DATABASE [{0}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE", databaseName), connection))
+					{
+						command.ExecuteNonQuery();
+					}
 				}
 				catch (SqlException)
 				{
@@ -150,8 +153,10 @@ namespace Insight.Database.Schema
 				}
 
 				// attempt to drop the database
-				var dropCommand = new SqlCommand(String.Format(CultureInfo.InvariantCulture, "DROP DATABASE [{0}]", databaseName), connection);
-				dropCommand.ExecuteNonQuery();
+				using (var dropCommand = new SqlCommand(String.Format(CultureInfo.InvariantCulture, "DROP DATABASE [{0}]", databaseName), connection))
+				{
+					dropCommand.ExecuteNonQuery();
+				}
             }
 
 			return true;
@@ -179,8 +184,18 @@ namespace Insight.Database.Schema
 		private static SqlConnection OpenMasterConnection(string connectionString)
 		{
 			var connection = new SqlConnection(GetMasterConnectionString(connectionString));
-			connection.Open();
-			return connection;
+			var disposable = connection;
+			try
+			{
+				connection.Open();
+				disposable = null;
+				return connection;
+			}
+			finally
+			{
+				if (disposable != null)
+					disposable.Dispose();
+			}
 		}
     	#endregion  
 
@@ -210,6 +225,7 @@ namespace Insight.Database.Schema
 		/// </summary>
 		/// <param name="schemaGroup">The name of the schemaGroup.</param>
 		/// <param name="schema">The schema to install.</param>
+		[System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Maintainability", "CA1502:AvoidExcessiveComplexity")]
 		public void Install(string schemaGroup, SchemaObjectCollection schema)
 		{
 			_connection.ResetLog();
@@ -480,6 +496,7 @@ namespace Insight.Database.Schema
 		/// <param name="context">The installation context.</param>
 		/// <param name="oldTableName">The name of the old table.</param>
 		/// <param name="newTableName">The name of the new table.</param>
+		[System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Maintainability", "CA1506:AvoidExcessiveClassCoupling"), System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Maintainability", "CA1505:AvoidUnmaintainableCode"), System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Maintainability", "CA1502:AvoidExcessiveComplexity")]
 		private void ScriptColumnsAndConstraints(InstallContext context, SchemaObject schemaObject, string oldTableName, string newTableName)
 		{
 			#region Detect Column Changes
@@ -628,6 +645,7 @@ namespace Insight.Database.Schema
 		/// </summary>
 		/// <param name="column">The column object.</param>
 		/// <returns>The string definition of the column.</returns>
+		[System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Maintainability", "CA1502:AvoidExcessiveComplexity")]
 		private static string GetColumnDefinition(dynamic column)
 		{
 			StringBuilder sb = new StringBuilder();
@@ -817,6 +835,7 @@ namespace Insight.Database.Schema
 		/// </summary>
 		/// <param name="context">The installation context.</param>
 		/// <param name="schemaObject">The schemaObject to script.</param>
+		[System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Maintainability", "CA1502:AvoidExcessiveComplexity")]
 		private void ScriptForeignKeys(InstallContext context, SchemaObject schemaObject)
 		{
 			IList<FastExpando> foreignKeys = null;
@@ -863,6 +882,7 @@ namespace Insight.Database.Schema
 		/// <param name="context">The installation context.</param>
 		/// <param name="schemaObject">The schemaObject to script.</param>
 		/// <param name="columnName">If specified, then this is the name of the column to filter on.</param>
+		[System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Maintainability", "CA1502:AvoidExcessiveComplexity")]
 		private void ScriptIndexes(InstallContext context, SchemaObject schemaObject, string columnName = null)
 		{
 			// get the indexes and constraints on a table
@@ -984,6 +1004,7 @@ namespace Insight.Database.Schema
 		/// </summary>
 		/// <param name="context">The installation context.</param>
 		/// <param name="schemaObject">The object to script.</param>
+		[System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Maintainability", "CA1502:AvoidExcessiveComplexity")]
 		private void ScriptXmlIndexes(InstallContext context, SchemaObject schemaObject)
 		{
 			IList<FastExpando> xmlIndexes;

@@ -167,12 +167,23 @@ namespace Insight.Database.Schema
 		protected override DbCommand CreateDbCommand()
 		{
 			var command = new RecordingDbCommand(InnerConnection.CreateCommand(), this);
+			var disposable = command;
 
-			// if we have a default command timeout, then set it on the command
-			if (CommandTimeout.HasValue)
-				command.CommandTimeout = CommandTimeout.Value;
+			try
+			{
 
-			return command;
+				// if we have a default command timeout, then set it on the command
+				if (CommandTimeout.HasValue)
+					command.CommandTimeout = CommandTimeout.Value;
+
+				disposable = null;
+				return command;
+			}
+			finally
+			{
+				if (disposable != null)
+					disposable.Dispose();
+			}
 		}
 		#endregion
 

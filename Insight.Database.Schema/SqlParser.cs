@@ -20,6 +20,7 @@ namespace Insight.Database.Schema
 		/// <summary>
 		/// Initializes the list of SQL parsers.
 		/// </summary>
+		[System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Performance", "CA1810:InitializeReferenceTypeStaticFieldsInline"), System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Usage", "CA2241:Provide correct arguments to formatting methods")]
 		static SqlParser()
 		{
 			List<SqlParser> parsers = new List<SqlParser>();

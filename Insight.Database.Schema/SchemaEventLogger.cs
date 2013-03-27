@@ -42,7 +42,9 @@ namespace Insight.Database.Schema
         /// <param name="installer">The installer to attach to</param>
         public void Attach (SchemaInstaller installer)
         {
-            installer.DroppingObject += _onSchemaChange;
+			if (installer == null) throw new ArgumentNullException("installer");
+			
+			installer.DroppingObject += _onSchemaChange;
             installer.CreatingObject += _onSchemaChange;
             installer.CreatedObject += _onSchemaChange;
 			installer.DropFailed += _onSchemaChange;
@@ -54,6 +56,8 @@ namespace Insight.Database.Schema
         /// <param name="installer">The installer to detach from</param>
         public void Detach (SchemaInstaller installer)
         {
+			if (installer == null) throw new ArgumentNullException("installer");
+
             installer.DroppingObject -= _onSchemaChange;
             installer.CreatingObject -= _onSchemaChange;
             installer.CreatedObject -= _onSchemaChange;
@@ -84,6 +88,8 @@ namespace Insight.Database.Schema
         /// <returns>The formatted event</returns>
         protected static string FormatEventArgs (SchemaEventArgs se)
         {
+			if (se == null) throw new ArgumentNullException("se");
+
             string eventName;
             switch (se.EventType)
             {

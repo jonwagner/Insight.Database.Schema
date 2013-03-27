@@ -115,6 +115,8 @@ namespace Insight.Database.Schema
         /// <exception cref="SchemaParsingException">If the schema file cannot be parsed</exception>
         public void Load (TextReader textReader)
         {
+			if (textReader == null) throw new ArgumentNullException("textReader");
+
             StringBuilder sb = new StringBuilder ();
             
             // read in each line until we get to a GO command
@@ -158,6 +160,9 @@ namespace Insight.Database.Schema
 		/// <param name="resourceFilter">A predicate that returns true if the named resource should be loaded, false otherwise.</param>
 		public void Load(Assembly assembly, Predicate<string> resourceFilter)
 		{
+			if (assembly == null) throw new ArgumentNullException("assembly");
+			if (resourceFilter == null) throw new ArgumentNullException("resourceFilter");
+
 			// find all of the embedded sql in the given assembly
 			foreach (string resourceName in assembly.GetManifestResourceNames().Where(rn => rn.EndsWith(".sql", StringComparison.OrdinalIgnoreCase)))
 			{
@@ -166,9 +171,14 @@ namespace Insight.Database.Schema
 					string sql;
 
 					// read in the sql
-					using (Stream stream = assembly.GetManifestResourceStream(resourceName))
+					Stream stream = assembly.GetManifestResourceStream(resourceName);
+					var disposable = stream;
 					using (StreamReader reader = new StreamReader(stream))
-						sql = reader.ReadToEnd();
+					{
+						disposable = null;
+
+						sql = reader.ReadToEnd();						
+					}
 
 					// now load up the sql
 					using (StringReader sr = new StringReader(sql))
@@ -185,6 +195,8 @@ namespace Insight.Database.Schema
         /// <exception cref="SchemaParsingException">If the sql cannot be parsed</exception>
         public void Add (string sql)
         {
+			if (sql == null) throw new ArgumentNullException("sql");
+
 			// change PRINT to --PRINT so we can keep diagnostics in the 
 			if (StripPrintStatements)
 				sql = sql.Replace ("PRINT", "--PRINT");
