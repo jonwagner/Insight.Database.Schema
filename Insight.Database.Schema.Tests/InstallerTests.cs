@@ -408,6 +408,54 @@ namespace Insight.Database.Schema.Tests
 		}
 		#endregion
 
+		#region Sql Schema Tests
+		[Test]
+		public void TestGrantOnPrefixedTableType(
+			[ValueSource("ConnectionStrings")] string connectionString)
+		{
+			var schema = new List<string>()
+			{
+				"CREATE ROLE MyRole",
+				"CREATE TYPE [dbo].[MyTableType] AS TABLE (C INT)",
+
+				// this prefix caused object verification to fail
+				"GRANT EXECUTE ON TYPE::[MyTableType] TO [MyRole]"
+			};
+
+			TestWithRollback(connectionString, connection =>
+			{
+				// try to install the schema
+				Install(connection, schema);
+
+				// verify that they are there
+				VerifyObjectsAndRegistry(schema, connection);
+			});
+		}
+
+		[Test]
+		public void TestGrantOnPrefixedSchemaType(
+			[ValueSource("ConnectionStrings")] string connectionString)
+		{
+			var schema = new List<string>()
+			{
+				"CREATE ROLE R",
+				"CREATE SCHEMA S",
+				
+				// validating permissions on schemas was not implemented
+				"GRANT EXECUTE ON SCHEMA::S TO R"
+			};
+
+			TestWithRollback(connectionString, connection =>
+			{
+				// try to install the schema
+				Install(connection, schema);
+
+				// verify that they are there
+				VerifyObjectsAndRegistry(schema, connection);
+			});
+		}
+		#endregion
+
 		#region Helper Functions
 		/// <summary>
 		/// Verify all of the objects in the database and registry.

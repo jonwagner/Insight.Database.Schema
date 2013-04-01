@@ -170,7 +170,8 @@ namespace Insight.Database.Schema
 							    JOIN sys.database_permissions p ON (u.principal_id = p.grantee_principal_id)
 							    LEFT JOIN sys.objects o ON (p.class_desc = 'OBJECT_OR_COLUMN' AND p.major_id = o.object_id)
 							    LEFT JOIN sys.types t ON (p.class_desc = 'TYPE' AND p.major_id = t.user_type_id)
-							    WHERE state_desc IN ('GRANT', 'GRANT_WITH_GRANT_OPTION') AND u.name = @UserName AND ISNULL(o.name, t.name) = @ObjectName",
+							    LEFT JOIN sys.schemas s ON (p.class_desc = 'SCHEMA' AND p.major_id = s.schema_id)
+							    WHERE state_desc IN ('GRANT', 'GRANT_WITH_GRANT_OPTION') AND u.name = @UserName AND COALESCE(o.name, t.name, s.name) = @ObjectName",
 								new Dictionary<string, object>()
 								{ 
 									{ "UserName", SqlParser.UnformatSqlName(m.Groups["user"].Value) },
@@ -241,7 +242,7 @@ namespace Insight.Database.Schema
 					    break;
 
 				    case SchemaObjectType.Schema:
-					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.schemas WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
+					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.schemas WHERE name = '{0}'", SqlParser.UnformatSqlName(Regex.Match(Name, @"SCHEMA (?<name>.*)").Groups["name"].Value));
 					    break;
 
 				    case SchemaObjectType.Certificate:

@@ -147,6 +147,7 @@ namespace Insight.Database.Schema
 						case SchemaObjectType.Service:
 						case SchemaObjectType.Queue:
 						case SchemaObjectType.Role:
+						case SchemaObjectType.Schema:
 							pieces = name.Split(new char[] { ' ' }, 2, StringSplitOptions.RemoveEmptyEntries);
 							name = pieces[0] + " " + FormatSqlName(pieces[1]);
 							break;
@@ -227,6 +228,8 @@ namespace Insight.Database.Schema
 		/// <exception cref="ArgumentException">If the table name cannot be determined</exception>
 		internal static string IndexNameFromFullName(string indexName)
 		{
+			indexName = _sqlTypePrefixRegex.Replace(indexName, "");
+
 			return UnformatSqlName(indexName.Split(_sqlNameDivider).Last());
 		}
 
@@ -255,6 +258,11 @@ namespace Insight.Database.Schema
 		/// The divider between pieces of a sql name
 		/// </summary>
 		private const char _sqlNameDivider = '.';
+
+		/// <summary>
+		/// Defines a SQL Type Prefix.
+		/// </summary>
+		private static readonly Regex _sqlTypePrefixRegex = new Regex(@"^\[?\w+\]?::");
 
 		/// <summary>
 		/// Matches characters used to escape a sql name
