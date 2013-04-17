@@ -91,6 +91,9 @@ namespace Insight.Database.Schema
 
 		private static void CreateParameters(IDictionary<string, object> parameters, IDbCommand cmd)
 		{
+			if (parameters == null)
+				return;
+
 			foreach (var pair in parameters)
 			{
 				var p = cmd.CreateParameter();

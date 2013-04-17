@@ -456,6 +456,49 @@ namespace Insight.Database.Schema.Tests
 		}
 		#endregion
 
+		#region Permissions Tests
+		private static string[] permissionsSchemas = new string[]
+		{
+			@"GRANT SELECT ON foo TO public",
+			@"GRANT INSERT, UPDATE ON foo TO public",
+			@"GRANT SELECT, INSERT, UPDATE, DELETE ON foo TO public",
+			@"GRANT INSERT ON foo TO public
+				GRANT SELECT,INSERT ON foo TO public",
+			@"GRANT DELETE ON foo TO public",
+		};
+
+		[Test]
+		public void TestMultiplePermissions(
+			[ValueSource("ConnectionStrings")] string connectionString,
+			[ValueSource("permissionsSchemas")] string permissionsSchemaStart,
+			[ValueSource("permissionsSchemas")] string permissionsSchemaEnd)
+		{
+			var baseSchema = new List<string>() { "CREATE TABLE Foo (f int)" };
+
+			var schemaStart = new List<string>(baseSchema);
+			schemaStart.AddRange(permissionsSchemaStart.Split('\n'));
+
+			var schemaEnd = new List<string>(baseSchema);
+			schemaEnd.AddRange(permissionsSchemaEnd.Split('\n'));
+
+			TestWithRollback(connectionString, connection =>
+			{
+				// try to install the schema
+				Install(connection, schemaStart);
+				VerifyObjectsAndRegistry(schemaStart, connection);
+
+				// convert to the target schema
+				Install(connection, schemaEnd);
+				VerifyObjectsAndRegistry(schemaEnd, connection);
+
+				// go back to the base schema
+				Install(connection, baseSchema);
+				Assert.AreEqual(0, connection.QuerySql("select * from sys.database_permissions p where p.major_id = object_id('foo')", null).Count);
+			});
+		}
+		#endregion
+
+
 		#region Helper Functions
 		/// <summary>
 		/// Verify all of the objects in the database and registry.
