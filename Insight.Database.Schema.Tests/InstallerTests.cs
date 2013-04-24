@@ -53,7 +53,7 @@ namespace Insight.Database.Schema.Tests
 			{ 
 				@"CREATE TABLE Beer ([ID] [int], Description [varchar](128))",
 				@"GRANT SELECT ON [Beer] TO [public]",
-				@"GRANT UPDATE ON [Beer] TO [public]",
+				@"GRANT UPDATE ON Beer TO [public]",
 			},
 			// set of all supported dependencies based on a table
 			new string[] 
@@ -465,6 +465,7 @@ namespace Insight.Database.Schema.Tests
 			@"GRANT INSERT ON foo TO public
 				GRANT SELECT,INSERT ON foo TO public",
 			@"GRANT DELETE ON foo TO public",
+			@"GRANT EXEC ON foo_bar TO public",
 		};
 
 		[Test]
@@ -473,7 +474,7 @@ namespace Insight.Database.Schema.Tests
 			[ValueSource("permissionsSchemas")] string permissionsSchemaStart,
 			[ValueSource("permissionsSchemas")] string permissionsSchemaEnd)
 		{
-			var baseSchema = new List<string>() { "CREATE TABLE Foo (f int)" };
+			var baseSchema = new List<string>() { "CREATE TABLE Foo (f int)", "CREATE PROC Foo_bar AS SELECT 1" };
 
 			var schemaStart = new List<string>(baseSchema);
 			schemaStart.AddRange(permissionsSchemaStart.Split('\n'));
