@@ -59,10 +59,7 @@
     <Compile Include="SqlParserTests.cs" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Insight.Database.Schema.Tests.dll.config">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <SubType>Designer</SubType>
-    </None>
+    <None Include="Insight.Database.Schema.Tests.dll.config" />
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>

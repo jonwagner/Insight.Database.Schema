@@ -195,6 +195,39 @@ namespace Insight.Database.Schema
 		}
 
 		/// <summary>
+		/// Reformat a sql name without losing owner and schema
+		/// </summary>
+		/// <remarks>dbo..foo returns [dbo]..[foo]</remarks>
+		/// <param name="name">The full name to clean up</param>
+		/// <returns>The unformatted object name</returns>
+		internal static string ReformatSqlName(string name)
+		{
+			string[] splitName = name.Split(_sqlNameDivider);
+			return String.Join(_sqlNameDividerString, splitName.Select(n => FormatSqlName(UnformatSqlName(n))).ToArray());
+		}
+
+		/// <summary>
+		/// Get the schema name from the name of a table
+		/// </summary>
+		/// <param name="tableName">The name of the table</param>
+		/// <returns>The name of the schema</returns>
+		/// <exception cref="ArgumentException">If the table name cannot be determined</exception>
+		internal static string SchemaNameFromTableName(string tableName)
+		{
+			string[] splitName = tableName.Split(_sqlNameDivider);
+			switch (splitName.Length)
+			{
+				case 2:
+					return FormatSqlName(_sqlNameCharactersRegex.Replace(splitName[0], "")) + _sqlNameDividerString;
+				case 1:
+					return "";
+
+				default:
+					throw new ArgumentException(String.Format(CultureInfo.CurrentCulture, Properties.Resources.CannotGetTableNameFromIndexName, tableName));
+			}
+		}
+
+		/// <summary>
 		/// Get the table name from the name of an index
 		/// </summary>
 		/// <param name="indexName">The name of the index</param>
@@ -258,6 +291,11 @@ namespace Insight.Database.Schema
 		/// The divider between pieces of a sql name
 		/// </summary>
 		private const char _sqlNameDivider = '.';
+
+		/// <summary>
+		/// The divider between pieces of a sql name
+		/// </summary>
+		private const string _sqlNameDividerString = ".";
 
 		/// <summary>
 		/// Defines a SQL Type Prefix.

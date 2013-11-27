@@ -23,7 +23,12 @@ namespace Insight.Database.Schema
 		/// <summary>
 		/// A string that is added to the hash of the dependencies so that the AutoProc can be forced to change if the internal implementation changes.
 		/// </summary>
-		private static string VersionSignature = "2.0.0.1";
+		private static string VersionSignature = "2.0.0.2";
+
+		/// <summary>
+		/// The name of the schema that we are generating procedures for.
+		/// </summary>
+		private string _schemaName;
 
 		/// <summary>
 		/// The name of the table that we are generating procedures for.
@@ -98,7 +103,8 @@ namespace Insight.Database.Schema
 			// break up the name into its components
 			var match = new Regex(AutoProcRegexString, RegexOptions.IgnoreCase).Match(name);
 			_type = (ProcTypes)Enum.Parse(typeof(ProcTypes), match.Groups["type"].Value);
-			_tableName = SqlParser.FormatSqlName(match.Groups["tablename"].Value);
+			_tableName = SqlParser.ReformatSqlName(match.Groups["tablename"].Value);
+			_schemaName = SqlParser.SchemaNameFromTableName(_tableName);
 
 			// generate the singular table name
 			if (!String.IsNullOrWhiteSpace(match.Groups["single"].Value))
@@ -111,7 +117,7 @@ namespace Insight.Database.Schema
 				_pluralTableName = SqlParser.FormatSqlName(match.Groups["plural"].Value);
 			else
 			{
-				_pluralTableName = _tableName;
+				_pluralTableName = SqlParser.FormatSqlName(_tableName);
 				if (String.Compare(_pluralTableName, _singularTableName, StringComparison.OrdinalIgnoreCase) == 0)
 					_pluralTableName = SqlParser.FormatSqlName(SqlParser.UnformatSqlName(_tableName) + "s");
 			}
@@ -693,10 +699,11 @@ namespace Insight.Database.Schema
 		private string MakeProcName(string type, bool plural)
 		{
 			// use the user-specified name or make one from the type
-			return SqlParser.FormatSqlName(String.Format (CultureInfo.InvariantCulture, Name ?? (plural ? "{0}{1}" : "{0}{2}"), 
+			return SqlParser.ReformatSqlName(String.Format (CultureInfo.InvariantCulture, Name ?? (plural ? "{3}{0}{1}" : "{3}{0}{2}"), 
 				type,
 				_pluralTableName,
-				_singularTableName));
+				_singularTableName,
+				_schemaName));
 		}
 
 		/// <summary>
@@ -707,10 +714,11 @@ namespace Insight.Database.Schema
 		private string MakeTableName(string type)
 		{
 			// use the user-specified name or make one from the type
-			return SqlParser.FormatSqlName(String.Format(CultureInfo.InvariantCulture, Name ?? "{2}{0}",
+			return SqlParser.ReformatSqlName(String.Format(CultureInfo.InvariantCulture, Name ?? "{3}{2}{0}",
 				type,
 				_tableName,
-				_singularTableName));
+				_singularTableName,
+				_schemaName));
 		}
 
 		/// <summary>
