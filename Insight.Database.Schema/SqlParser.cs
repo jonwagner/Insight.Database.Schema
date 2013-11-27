@@ -158,14 +158,7 @@ namespace Insight.Database.Schema
 
 						default:
 							// for most types, reformat the name to a fully qualified sql name
-							pieces = name.Split(_sqlNameDivider);
-							name = "";
-							for (int i = pieces.Length - _nameTemplate.Split(_sqlNameDivider).Length; i < pieces.Length; i++)
-							{
-								if (name.Length > 0)
-									name += ".";
-								name += FormatSqlName(pieces[i]);
-							}
+							name = ReformatSqlName(name);
 							break;
 					}
 
@@ -236,21 +229,8 @@ namespace Insight.Database.Schema
 		internal static string TableNameFromIndexName(string indexName)
 		{
 			string[] splitName = indexName.Split(_sqlNameDivider);
-			string tableName;
-			switch (splitName.Length)
-			{
-				case 3:
-					tableName = splitName[1];
-					break;
-				case 2:
-					tableName = splitName[0];
-					break;
 
-				default:
-					throw new ArgumentException(String.Format(CultureInfo.CurrentCulture, Properties.Resources.CannotGetTableNameFromIndexName, indexName));
-			}
-
-			return _sqlNameCharactersRegex.Replace(tableName, "");
+			return String.Join(_sqlNameDividerString, splitName.Take(splitName.Length - 1).Select(s => FormatSqlName(s)).ToArray());
 		}
 
 		/// <summary>

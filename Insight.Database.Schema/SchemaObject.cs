@@ -454,20 +454,13 @@ namespace Insight.Database.Schema
 				case SchemaObjectType.Index:
                 case SchemaObjectType.PrimaryXmlIndex:
                 case SchemaObjectType.SecondaryXmlIndex:
-                    split = objectName.Split ('.');
-                    tableName = split[split.Length - 2];
-                    string indexName = split[split.Length - 1];
-                    command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP INDEX {1} ON {0}", tableName, indexName);
+                    command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP INDEX {1} ON {0}", SqlParser.TableNameFromIndexName(objectName), SqlParser.IndexNameFromFullName(objectName));
                     break;
 
                 case SchemaObjectType.PrimaryKey:
                 case SchemaObjectType.Constraint:
                 case SchemaObjectType.ForeignKey:
-                    // need to drop constraints by table and constraint name
-                    split = objectName.Split ('.');
-                    tableName = split[split.Length - 2];
-                    string constraintName = split[split.Length - 1];
-                    command.CommandText = String.Format (CultureInfo.InvariantCulture, "ALTER TABLE {0} DROP CONSTRAINT {1}", tableName, constraintName);
+					command.CommandText = String.Format(CultureInfo.InvariantCulture, "ALTER TABLE {0} DROP CONSTRAINT {1}", SqlParser.TableNameFromIndexName(objectName), SqlParser.IndexNameFromFullName(objectName));
                     break;
 
 				case SchemaObjectType.Default:
