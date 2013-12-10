@@ -136,7 +136,7 @@ namespace Insight.Database.Schema
 			{
 				Regex optionalSqlName = new Regex(@"([\[\]])");
 				string escapedWildcardedName = optionalSqlName.Replace(Regex.Escape(_tableName), @"$1?");
-				Regex regex = new Regex(String.Format(CultureInfo.InvariantCulture, @"(CREATE\s+TABLE\s+{0})|(ALTER\s+TABLE\s+{0}.*PRIMARY\s+KEY)", escapedWildcardedName));
+				Regex regex = new Regex(String.Format(CultureInfo.InvariantCulture, @"(CREATE\s+TABLE\s+.*{0}\s*\()|(ALTER\s+TABLE\s+.*{0}.*PRIMARY\s+KEY)", escapedWildcardedName));
 
 				// calculate the signature based upon the TABLE definition, plus any PRIMARY KEY definition for the table
 				string sql = String.Join(" ", objects.Where(o => regex.Match(o.Sql).Success)
