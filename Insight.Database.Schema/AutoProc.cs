@@ -23,7 +23,12 @@ namespace Insight.Database.Schema
 		/// <summary>
 		/// A string that is added to the hash of the dependencies so that the AutoProc can be forced to change if the internal implementation changes.
 		/// </summary>
-		private static string VersionSignature = "2.0.0.2";
+		private static string VersionSignature = "2.1.0.0";
+
+		/// <summary>
+		/// The exception thrown when an optimistic concurrency error is detected.
+		/// </summary>
+		private static string _concurrencyError = "At least one record has changed or does not exist. (CONCURRENCY CHECK)";
 
 		/// <summary>
 		/// The name of the schema that we are generating procedures for.
@@ -65,7 +70,7 @@ namespace Insight.Database.Schema
 		/// <summary>
 		/// The RegEx used to detect and decode an AutoProc.
 		/// </summary>
-		internal static readonly string AutoProcRegexString = String.Format(CultureInfo.InvariantCulture, @"AUTOPROC\s+(?<type>\w+)\s+(?<tablename>{0})(\s+Name=(?<name>[^\s]+))?(\s+Single=(?<single>[^\s]+))?(\s+Plural=(?<plural>[^\s]+))?(\s+ExecuteAsOwner=(?<execasowner>[^\s]+))?", SqlParser.SqlNameExpression);
+		internal static readonly string AutoProcRegexString = String.Format(CultureInfo.InvariantCulture, @"AUTOPROC\s+(?<type>\w[,\w]+)\s+(?<tablename>{0})(\s+Name=(?<name>[^\s]+))?(\s+Single=(?<single>[^\s]+))?(\s+Plural=(?<plural>[^\s]+))?(\s+ExecuteAsOwner=(?<execasowner>[^\s]+))?", SqlParser.SqlNameExpression);
 
 		/// <summary>
 		/// The RegEx used to detect and decode an AutoProc.
@@ -172,20 +177,22 @@ namespace Insight.Database.Schema
 			// generate the sql
 			string sql = "";
 
+			bool optimistic = _type.HasFlag(ProcTypes.Optimistic);
+
 			if (_type.HasFlag(ProcTypes.Table)) sql += GenerateTableSql(columns) + _batchDivider;
-			if (_type.HasFlag(ProcTypes.IdTable)) sql += GenerateIdTableSql(columns) + _batchDivider;
+			if (_type.HasFlag(ProcTypes.IdTable)) sql += GenerateIdTableSql(columns, optimistic) + _batchDivider;
 
 			if (_type.HasFlag(ProcTypes.Select)) sql += GenerateSelectSql(columns) + _batchDivider;
 			if (_type.HasFlag(ProcTypes.Insert)) sql += GenerateInsertSql(columns) + _batchDivider;
-			if (_type.HasFlag(ProcTypes.Update)) sql += GenerateUpdateSql(columns) + _batchDivider;
-			if (_type.HasFlag(ProcTypes.Upsert)) sql += GenerateUpsertSql(columns) + _batchDivider;
-			if (_type.HasFlag(ProcTypes.Delete)) sql += GenerateDeleteSql(columns) + _batchDivider;
+			if (_type.HasFlag(ProcTypes.Update)) sql += GenerateUpdateSql(columns, optimistic) + _batchDivider;
+			if (_type.HasFlag(ProcTypes.Upsert)) sql += GenerateUpsertSql(columns, optimistic) + _batchDivider;
+			if (_type.HasFlag(ProcTypes.Delete)) sql += GenerateDeleteSql(columns, optimistic) + _batchDivider;
 
 			if (_type.HasFlag(ProcTypes.SelectMany)) sql += GenerateSelectManySql(columns) + _batchDivider;
 			if (_type.HasFlag(ProcTypes.InsertMany)) sql += GenerateInsertManySql(columns) + _batchDivider;
-			if (_type.HasFlag(ProcTypes.UpdateMany)) sql += GenerateUpdateManySql(columns) + _batchDivider;
-			if (_type.HasFlag(ProcTypes.UpsertMany)) sql += GenerateUpsertManySql(columns) + _batchDivider;
-			if (_type.HasFlag(ProcTypes.DeleteMany)) sql += GenerateDeleteManySql(columns) + _batchDivider;
+			if (_type.HasFlag(ProcTypes.UpdateMany)) sql += GenerateUpdateManySql(columns, optimistic) + _batchDivider;
+			if (_type.HasFlag(ProcTypes.UpsertMany)) sql += GenerateUpsertManySql(columns, optimistic) + _batchDivider;
+			if (_type.HasFlag(ProcTypes.DeleteMany)) sql += GenerateDeleteManySql(columns, optimistic) + _batchDivider;
 
 			if (_type.HasFlag(ProcTypes.Find)) sql += GenerateFindSql(columns) + _batchDivider;
 
@@ -280,11 +287,15 @@ namespace Insight.Database.Schema
 		/// </summary>
 		/// <param name="columns">The list of columns in the table.</param>
 		/// <returns>The stored procedure SQL.</returns>
-		private string GenerateUpdateSql(IList<ColumnDefinition> columns)
+		private string GenerateUpdateSql(IList<ColumnDefinition> columns, bool optimistic)
 		{
-			IEnumerable<ColumnDefinition> inputs = columns.Where(c => c.IsKey || !c.IsReadOnly);
+			IEnumerable<ColumnDefinition> inputs = columns.Where(c => c.IsKey || !c.IsReadOnly || c.IsRowVersion);
 			IEnumerable<ColumnDefinition> keys = columns.Where(c => c.IsKey);
+			IEnumerable<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly);
 			IEnumerable<ColumnDefinition> updatable = columns.Where(c => !c.IsKey && !c.IsReadOnly);
+			ColumnDefinition timestamp = columns.Where(c => c.IsRowVersion).SingleOrDefault();
+
+			VerifyOptimisticTimestamp(optimistic, timestamp);
 
 			// generate the sql for each proc and install them
 			StringBuilder sb = new StringBuilder();
@@ -300,8 +311,19 @@ namespace Insight.Database.Schema
 				sb.AppendFormat("UPDATE {0} SET", _tableName);
 				sb.AppendLine();
 				sb.AppendLine(Join(updatable, ",", "{0}={1}"));
+				if (outputs.Any())
+				{
+					sb.AppendLine("OUTPUT");
+					sb.AppendLine(Join(outputs, ",", "Inserted.{0}"));
+				} 
 				sb.AppendLine("WHERE");
 				sb.AppendLine(Join(keys, " AND", "{0}={1}"));
+
+				if (optimistic)
+				{
+					sb.AppendLine(String.Format(CultureInfo.InvariantCulture, "AND ({0}={1} OR {1} IS NULL)", timestamp.Name, timestamp.ParameterName));
+					sb.AppendLine(GetConcurrencyCheck("1", false));
+				}
 			}
 			else
 			{
@@ -317,13 +339,16 @@ namespace Insight.Database.Schema
 		/// </summary>
 		/// <param name="columns">The list of columns in the table.</param>
 		/// <returns>The stored procedure SQL.</returns>
-		private string GenerateUpsertSql(IList<ColumnDefinition> columns)
+		private string GenerateUpsertSql(IList<ColumnDefinition> columns, bool optimistic)
 		{
-			IEnumerable<ColumnDefinition> inputs = columns.Where(c => c.IsKey || !c.IsReadOnly);
+			IEnumerable<ColumnDefinition> inputs = columns.Where(c => c.IsKey || !c.IsReadOnly || c.IsRowVersion);
 			IEnumerable<ColumnDefinition> keys = columns.Where(c => c.IsKey);
 			IEnumerable<ColumnDefinition> updatable = columns.Where(c => !c.IsKey && !c.IsReadOnly);
 			IEnumerable<ColumnDefinition> insertable = columns.Where(c => !c.IsReadOnly);
 			IEnumerable<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly);
+			ColumnDefinition timestamp = columns.Where(c => c.IsRowVersion).SingleOrDefault();
+
+			VerifyOptimisticTimestamp(optimistic, timestamp);
 
 			// generate the sql for each proc and install them
 			StringBuilder sb = new StringBuilder();
@@ -333,6 +358,9 @@ namespace Insight.Database.Schema
 			sb.AppendLine(Join(inputs, ",", "{1} {2}"));
 			sb.AppendLine(")");
 			sb.AppendLine("AS");
+
+			if (optimistic)
+				sb.AppendLine("BEGIN TRANSACTION");
 
 			if (updatable.Any())
 			{
@@ -350,7 +378,10 @@ namespace Insight.Database.Schema
 				sb.AppendLine(")");
 				if (updatable.Any())
 				{
-					sb.AppendLine("WHEN MATCHED THEN UPDATE SET");
+					if (optimistic)
+						sb.AppendLine(String.Format(CultureInfo.InvariantCulture, "WHEN MATCHED AND (t.{0} = s.{0} OR s.{0} IS NULL) THEN UPDATE SET", timestamp.Name));
+					else
+						sb.AppendLine("WHEN MATCHED THEN UPDATE SET");
 					sb.AppendLine(Join(updatable, ",", "\tt.{0} = s.{0}"));
 				}
 				if (insertable.Any())
@@ -377,6 +408,12 @@ namespace Insight.Database.Schema
 				sb.AppendLine();
 			}
 
+			if (optimistic)
+			{
+				sb.AppendLine(GetConcurrencyCheck("1", true));
+				sb.AppendLine("COMMIT");
+			}
+
 			return sb.ToString();
 		}
 
@@ -385,21 +422,31 @@ namespace Insight.Database.Schema
 		/// </summary>
 		/// <param name="columns">The list of columns in the table.</param>
 		/// <returns>The stored procedure SQL.</returns>
-		private string GenerateDeleteSql(IList<ColumnDefinition> columns)
+		private string GenerateDeleteSql(IList<ColumnDefinition> columns, bool optimistic)
 		{
+			IEnumerable<ColumnDefinition> inputs = columns.Where(c => c.IsKey || c.IsRowVersion);
 			IEnumerable<ColumnDefinition> keys = columns.Where(c => c.IsKey);
+			ColumnDefinition timestamp = columns.Where(c => c.IsRowVersion).SingleOrDefault();
+
+			VerifyOptimisticTimestamp(optimistic, timestamp);
 
 			// generate the sql for each proc and install them
 			StringBuilder sb = new StringBuilder();
 			sb.AppendFormat("CREATE PROCEDURE {0}", MakeProcName("Delete", plural: false));
 			sb.AppendLine();
 			sb.AppendLine("(");
-			sb.AppendLine(Join(keys, ",", "{1} {2}"));
+			sb.AppendLine(Join(inputs, ",", "{1} {2}"));
 			sb.AppendLine(")");
 			sb.AppendLine("AS");
 			sb.AppendFormat("DELETE FROM {0} WHERE", _tableName);
 			sb.AppendLine();
 			sb.AppendLine(Join(keys, " AND", "{0}={1}"));
+
+			if (optimistic)
+			{
+				sb.AppendLine(Join(timestamp, "", "AND ({0}={1} OR {1} IS NULL)"));
+				sb.AppendLine(GetConcurrencyCheck("1", false));
+			}
 
 			return sb.ToString();
 		}
@@ -419,7 +466,7 @@ namespace Insight.Database.Schema
 			sb.AppendLine();
 			sb.AppendLine("AS TABLE");
 			sb.AppendLine("(");
-			sb.AppendLine(Join(columns, ",", "{0} {2}"));
+			sb.AppendLine(Join(columns, ",", "{0} {2} {3}"));
 			sb.AppendLine(")");
 
 			return sb.ToString();
@@ -430,9 +477,12 @@ namespace Insight.Database.Schema
 		/// </summary>
 		/// <param name="columns">The list of columns in the table.</param>
 		/// <returns>The stored procedure SQL.</returns>
-		private string GenerateIdTableSql(IList<ColumnDefinition> columns)
+		private string GenerateIdTableSql(IList<ColumnDefinition> columns, bool optimistic)
 		{
-			IEnumerable<ColumnDefinition> keys = columns.Where(c => c.IsKey);
+			IEnumerable<ColumnDefinition> keys = columns.Where(c => c.IsKey || c.IsRowVersion);
+			ColumnDefinition timestamp = columns.Where(c => c.IsRowVersion).SingleOrDefault();
+
+			VerifyOptimisticTimestamp(optimistic, timestamp);
 
 			// generate the sql for each proc and install them
 			StringBuilder sb = new StringBuilder();
@@ -516,10 +566,14 @@ namespace Insight.Database.Schema
 		/// </summary>
 		/// <param name="columns">The list of columns in the table.</param>
 		/// <returns>The stored procedure SQL.</returns>
-		private string GenerateUpdateManySql(IList<ColumnDefinition> columns)
+		private string GenerateUpdateManySql(IList<ColumnDefinition> columns, bool optimistic)
 		{
 			IEnumerable<ColumnDefinition> keys = columns.Where(c => c.IsKey);
 			IEnumerable<ColumnDefinition> updatable = columns.Where(c => !c.IsReadOnly);
+			IEnumerable<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly);
+			ColumnDefinition timestamp = columns.Where(c => c.IsRowVersion).SingleOrDefault();
+
+			VerifyOptimisticTimestamp(optimistic, timestamp);
 
 			string parameterName = SqlParser.UnformatSqlName(_singularTableName);
 
@@ -528,6 +582,14 @@ namespace Insight.Database.Schema
 			sb.AppendFormat("CREATE PROCEDURE {0} (@{1} {2} READONLY)", MakeProcName("Update", plural: true), parameterName, MakeTableName("Table"));
 			sb.AppendLine();
 			sb.AppendLine("AS");
+
+			if (optimistic)
+			{
+				sb.AppendLine("BEGIN TRANSACTION");
+				sb.AppendLine("DECLARE @expected[int]");
+				sb.AppendLine(String.Format(CultureInfo.InvariantCulture, "SELECT @expected = COUNT(*) FROM @{0}", parameterName));
+			}
+
 			sb.AppendFormat("MERGE INTO {0} AS t", _tableName);
 			sb.AppendLine();
 			sb.AppendFormat("USING @{0} AS s", parameterName);
@@ -536,9 +598,24 @@ namespace Insight.Database.Schema
 			sb.AppendLine("(");
 			sb.AppendLine(Join(keys, " AND", "t.{0} = s.{0}"));
 			sb.AppendLine(")");
-			sb.AppendLine("WHEN MATCHED THEN UPDATE SET");
+			if (optimistic)
+				sb.AppendLine(String.Format(CultureInfo.InvariantCulture, "WHEN MATCHED AND (t.{0} = s.{0} OR s.{0} IS NULL) THEN UPDATE SET", timestamp.Name));
+			else
+				sb.AppendLine("WHEN MATCHED THEN UPDATE SET");
 			sb.AppendLine(Join(updatable, ",", "t.{0} = s.{0}"));
+			if (outputs.Any())
+			{
+				sb.AppendLine("OUTPUT");
+				sb.AppendLine(Join(outputs, ",", "Inserted.{0}"));
+			} 
 			sb.AppendLine(";");
+
+			if (optimistic)
+			{
+				sb.AppendLine(GetConcurrencyCheck("@expected", true));
+				sb.AppendLine("COMMIT");
+			}
+
 			return sb.ToString();
 		}
 
@@ -547,12 +624,15 @@ namespace Insight.Database.Schema
 		/// </summary>
 		/// <param name="columns">The list of columns in the table.</param>
 		/// <returns>The stored procedure SQL.</returns>
-		private string GenerateUpsertManySql(IList<ColumnDefinition> columns)
+		private string GenerateUpsertManySql(IList<ColumnDefinition> columns, bool optimistic)
 		{
 			IEnumerable<ColumnDefinition> keys = columns.Where(c => c.IsKey);
 			IEnumerable<ColumnDefinition> updatable = columns.Where(c => !c.IsKey && !c.IsReadOnly);
 			IEnumerable<ColumnDefinition> insertable = columns.Where(c => !c.IsReadOnly);
 			IEnumerable<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly);
+			ColumnDefinition timestamp = columns.Where(c => c.IsRowVersion).SingleOrDefault();
+
+			VerifyOptimisticTimestamp(optimistic, timestamp);
 
 			string parameterName = SqlParser.UnformatSqlName(_singularTableName);
 
@@ -561,6 +641,14 @@ namespace Insight.Database.Schema
 			sb.AppendFormat("CREATE PROCEDURE {0} (@{1} {2} READONLY)", MakeProcName("Upsert", plural: true), parameterName, MakeTableName("Table"));
 			sb.AppendLine();
 			sb.AppendLine("AS");
+
+			if (optimistic)
+			{
+				sb.AppendLine("BEGIN TRANSACTION");
+				sb.AppendLine("DECLARE @expected[int]");
+				sb.AppendLine(String.Format(CultureInfo.InvariantCulture, "SELECT @expected = COUNT(*) FROM @{0}", parameterName));
+			}
+
 			sb.AppendFormat("MERGE INTO {0} AS t", _tableName);
 			sb.AppendLine();
 			sb.AppendFormat("USING @{0} AS s", parameterName);
@@ -571,7 +659,10 @@ namespace Insight.Database.Schema
 			sb.AppendLine(")");
 			if (updatable.Any())
 			{
-				sb.AppendLine("WHEN MATCHED THEN UPDATE SET");
+				if (optimistic)
+					sb.AppendLine(String.Format(CultureInfo.InvariantCulture, "WHEN MATCHED AND (t.{0} = s.{0} OR s.{0} IS NULL) THEN UPDATE SET", timestamp.Name));
+				else
+					sb.AppendLine("WHEN MATCHED THEN UPDATE SET");
 				sb.AppendLine(Join(updatable, ",", "t.{0} = s.{0}"));
 			}
 			if (insertable.Any())
@@ -592,6 +683,12 @@ namespace Insight.Database.Schema
 			}
 			sb.AppendLine(";");
 
+			if (optimistic)
+			{
+				sb.AppendLine(GetConcurrencyCheck("@expected", true));
+				sb.AppendLine("COMMIT");
+			}
+
 			return sb.ToString();
 		}
 
@@ -600,9 +697,12 @@ namespace Insight.Database.Schema
 		/// </summary>
 		/// <param name="columns">The list of columns in the table.</param>
 		/// <returns>The stored procedure SQL.</returns>
-		private string GenerateDeleteManySql(IList<ColumnDefinition> columns)
+		private string GenerateDeleteManySql(IList<ColumnDefinition> columns, bool optimistic)
 		{
 			IEnumerable<ColumnDefinition> keys = columns.Where(c => c.IsKey);
+			ColumnDefinition timestamp = columns.Where(c => c.IsRowVersion).SingleOrDefault();
+
+			VerifyOptimisticTimestamp(optimistic, timestamp);
 
 			string parameterName = SqlParser.UnformatSqlName(_singularTableName);
 
@@ -611,6 +711,14 @@ namespace Insight.Database.Schema
 			sb.AppendFormat("CREATE PROCEDURE {0} (@{1} {2} READONLY)", MakeProcName("Delete", plural: true), parameterName, MakeTableName("IdTable"));
 			sb.AppendLine();
 			sb.AppendLine("AS");
+
+			if (optimistic)
+			{
+				sb.AppendLine("BEGIN TRANSACTION");
+				sb.AppendLine("DECLARE @expected[int]");
+				sb.AppendLine(String.Format(CultureInfo.InvariantCulture, "SELECT @expected = COUNT(*) FROM @{0}", parameterName));
+			}
+
 			sb.AppendFormat("DELETE FROM {0}", _tableName);
 			sb.AppendLine();
 			sb.AppendFormat("\tFROM {0} AS t", _tableName);
@@ -619,7 +727,15 @@ namespace Insight.Database.Schema
 			sb.AppendLine();
 			sb.AppendLine("(");
 			sb.AppendLine(Join(keys, " AND", "t.{0} = s.{0}"));
+			if (optimistic)
+				sb.AppendLine(Join(timestamp, " AND", " AND (t.{0} = s.{0} OR s.{0} IS NULL)"));
 			sb.AppendLine(")");
+
+			if (optimistic)
+			{
+				sb.AppendLine(GetConcurrencyCheck("@expected", true));
+				sb.AppendLine("COMMIT");
+			}
 
 			return sb.ToString();
 		}
@@ -782,7 +898,44 @@ namespace Insight.Database.Schema
 		/// <returns>The delimited list of column names.</returns>
 		private static string Join(IEnumerable<ColumnDefinition> columns, string divider, string template)
 		{
-			return String.Join(divider + Environment.NewLine, columns.Select(col => String.Format(CultureInfo.InvariantCulture, "\t" + template, col.ColumnName, col.ParameterName, col.SqlType)));
+			return String.Join(divider + Environment.NewLine, columns.Select(col => String.Format(CultureInfo.InvariantCulture, "\t" + template, col.ColumnName, col.ParameterName, col.SqlType, col.IsUpdateNullable ? "NULL" : "NOT NULL")));
+		}
+
+		private static string Join(ColumnDefinition column, string divider, string template)
+		{
+			var columns = new List<ColumnDefinition>();
+			columns.Add(column);
+			return Join(columns, divider, template);
+		}
+
+		/// <summary>
+		/// Generates the sql for a concurrency check.
+		/// </summary>
+		/// <param name="expectedCount">A string representing the expected number of affected records.</param>
+		/// <param name="doRollback">True to rollback the current transaction before throwing the error.</param>
+		/// <returns>The SQL for the concurrency check.</returns>
+		private static string GetConcurrencyCheck(string expectedCount, bool doRollback)
+		{
+			StringBuilder sb = new StringBuilder();
+			sb.AppendFormat("IF @@ROWCOUNT <> {0}", expectedCount);
+			if (doRollback)
+				sb.AppendFormat(CultureInfo.InvariantCulture, " BEGIN ROLLBACK");
+			sb.AppendFormat(" RAISERROR('{0}', 16, 1)", _concurrencyError);
+			if (doRollback)
+				sb.Append(" END");
+
+			return sb.ToString();
+		}
+
+		/// <summary>
+		/// Verifies that if the proc is optimistic, then there is a timestamp column.
+		/// </summary>
+		/// <param name="optimistic">True if it is an optimistic proc.</param>
+		/// <param name="timestamp">The timestamp column if there is one.	</param>
+		private void VerifyOptimisticTimestamp(bool optimistic, ColumnDefinition timestamp)
+		{
+			if (optimistic && timestamp == null)
+				throw new SchemaException(String.Format(CultureInfo.InvariantCulture, "Cannot find a timestamp column on Table {0} for concurrency checking", _tableName));
 		}
 		#endregion
 
@@ -806,6 +959,8 @@ namespace Insight.Database.Schema
 			UpsertMany = 1 << 10,
 			DeleteMany = 1 << 11,
 			Find = 1 << 12,
+
+			Optimistic = 1 << 31,
 
 			All = 
 				Table | IdTable | 

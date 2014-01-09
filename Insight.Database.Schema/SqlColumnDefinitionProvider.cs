@@ -39,7 +39,7 @@ namespace Insight.Database.Schema
 
 			// get the schema of the table and the primary key
 			string schemaSql = String.Format(CultureInfo.InvariantCulture, @"
-				SELECT c.name, type_name=t.name, c.max_length, c.precision, c.scale, is_identity, is_readonly = is_identity | is_computed,
+				SELECT c.name, type_name=t.name, c.max_length, c.precision, c.scale, is_identity, is_readonly = is_identity | is_computed, c.is_nullable,
 					is_key = CASE WHEN pk.column_id IS NOT NULL THEN 1 ELSE 0 END
 					FROM sys.columns c
 					JOIN sys.types t ON (c.user_type_id = t.user_type_id AND t.is_user_defined = 0)
@@ -63,7 +63,8 @@ namespace Insight.Database.Schema
 
 						IsKey = Convert.ToBoolean(reader["is_key"], CultureInfo.InvariantCulture),
 						IsIdentity = Convert.ToBoolean(reader["is_identity"], CultureInfo.InvariantCulture),
-						IsReadOnly = Convert.ToBoolean(reader["is_readonly"], CultureInfo.InvariantCulture)
+						IsReadOnly = Convert.ToBoolean(reader["is_readonly"], CultureInfo.InvariantCulture),
+						IsUpdateNullable = Convert.ToBoolean(reader["is_nullable"], CultureInfo.InvariantCulture),
 					};
 
 					switch (column.SqlType)
@@ -92,6 +93,8 @@ namespace Insight.Database.Schema
 						case "rowversion":
 						case "timestamp":
 							column.IsReadOnly = true;
+							column.IsRowVersion = true;
+							column.IsUpdateNullable = true;
 							break;
 					}
 

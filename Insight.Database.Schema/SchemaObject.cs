@@ -439,8 +439,6 @@ namespace Insight.Database.Schema
 
 			IDbCommand command = connection.CreateCommand();
 
-            string[] split;
-            string tableName;
             switch (type)
             {
                 case SchemaObjectType.Table:

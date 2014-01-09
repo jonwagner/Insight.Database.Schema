@@ -4,7 +4,8 @@
 	[Name] [nvarchar](128) NOT NULL,
 	[Flavor] [nvarchar](128) NULL,
 	[OriginalGravity] [decimal](18, 2) NULL,
-	[Details][varchar](MAX)
+	[Details] [varchar](MAX),
+	[RowVersion] [timestamp]
 ) ON [PRIMARY]
 GO
 
@@ -14,7 +15,7 @@ ALTER TABLE [Beer] WITH NOCHECK ADD CONSTRAINT [PK_Beer] PRIMARY KEY NONCLUSTERE
 )
 GO
 
--- AUTOPROC All [Beer]
+-- AUTOPROC All,Optimistic [Beer] 
 GO
 
 GRANT ALL ON SelectBeer TO [public]

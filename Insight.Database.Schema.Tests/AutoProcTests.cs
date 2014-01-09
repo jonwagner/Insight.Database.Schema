@@ -164,7 +164,7 @@ namespace Insight.Database.Schema.Tests
 		{
 			AutoProc p = new AutoProc("AUTOPROC Update [Beer] UpdateBeer", Columns, null);
 
-			Assert.AreEqual("CREATE PROCEDURE [UpdateBeer]\r\n(\r\n\t@ID int,\r\n\t@Name varchar(256),\r\n\t@OriginalGravity decimal(18,2)\r\n)\r\nAS\r\nUPDATE [Beer] SET\r\n\t[Name]=@Name,\r\n\t[OriginalGravity]=@OriginalGravity\r\nWHERE\r\n\t[ID]=@ID\r\n\r\nGO\r\n", p.Sql);
+			Assert.AreEqual("CREATE PROCEDURE [UpdateBeer]\r\n(\r\n\t@ID int,\r\n\t@Name varchar(256),\r\n\t@OriginalGravity decimal(18,2)\r\n)\r\nAS\r\nUPDATE [Beer] SET\r\n\t[Name]=@Name,\r\n\t[OriginalGravity]=@OriginalGravity\r\nOUTPUT\r\n\tInserted.[ID]\r\nWHERE\r\n\t[ID]=@ID\r\n\r\nGO\r\n", p.Sql);
 		}
 
 		[Test]
@@ -213,7 +213,7 @@ namespace Insight.Database.Schema.Tests
 		{
 			AutoProc p = new AutoProc("AUTOPROC Table [Beer]", Columns, null);
 
-			Assert.AreEqual("CREATE TYPE [BeerTable]\r\nAS TABLE\r\n(\r\n\t[ID] int,\r\n\t[Name] varchar(256),\r\n\t[OriginalGravity] decimal(18,2)\r\n)\r\n\r\nGO\r\n", p.Sql);
+			Assert.AreEqual("CREATE TYPE [BeerTable]\r\nAS TABLE\r\n(\r\n\t[ID] int NOT NULL,\r\n\t[Name] varchar(256) NOT NULL,\r\n\t[OriginalGravity] decimal(18,2) NOT NULL\r\n)\r\n\r\nGO\r\n", p.Sql);
 		}
 
 		[Test]
