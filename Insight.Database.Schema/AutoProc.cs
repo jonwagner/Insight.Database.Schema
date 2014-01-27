@@ -785,7 +785,7 @@ namespace Insight.Database.Schema
 			sb.AppendLine(") THEN @OrderBy ELSE ' ORDER BY INVALID COLUMN ' END");
 			sb.AppendLine("IF @OrderBy IS NOT NULL AND @ThenBy IS NOT NULL SET @sql = @sql + CASE WHEN @ThenBy IN (");
 			sb.AppendLine(Join(columns, ",", "'{0}', '{0} DESC'"));
-			sb.AppendLine(") THEN @ThenBy ELSE ' ORDER BY INVALID COLUMN ' END");
+			sb.AppendLine(") THEN ',' + @ThenBy ELSE ' ORDER BY INVALID COLUMN ' END");
 
             // handle top/skip -> offset/fetch
             // if skip is specified, convert TOP to OFFSET
