@@ -23,7 +23,7 @@ namespace Insight.Database.Schema
 		/// <summary>
 		/// A string that is added to the hash of the dependencies so that the AutoProc can be forced to change if the internal implementation changes.
 		/// </summary>
-		private static string VersionSignature = "2.1.0.0";
+		private static string VersionSignature = "2.1.0.1";
 
 		/// <summary>
 		/// The exception thrown when an optimistic concurrency error is detected.
@@ -898,7 +898,11 @@ namespace Insight.Database.Schema
 		/// <returns>The delimited list of column names.</returns>
 		private static string Join(IEnumerable<ColumnDefinition> columns, string divider, string template)
 		{
-			return String.Join(divider + Environment.NewLine, columns.Select(col => String.Format(CultureInfo.InvariantCulture, "\t" + template, col.ColumnName, col.ParameterName, col.SqlType, col.IsUpdateNullable ? "NULL" : "NOT NULL")));
+			return String.Join(divider + Environment.NewLine, columns.Select(col => String.Format(CultureInfo.InvariantCulture, "\t" + template, 
+				col.ColumnName, 
+				col.ParameterName, 
+				col.SqlType, 
+				(col.IsUpdateNullable || col.IsIdentity) ? "NULL" : "NOT NULL")));
 		}
 
 		private static string Join(ColumnDefinition column, string divider, string template)

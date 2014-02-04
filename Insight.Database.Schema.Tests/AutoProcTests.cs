@@ -213,7 +213,7 @@ namespace Insight.Database.Schema.Tests
 		{
 			AutoProc p = new AutoProc("AUTOPROC Table [Beer]", Columns, null);
 
-			Assert.AreEqual("CREATE TYPE [BeerTable]\r\nAS TABLE\r\n(\r\n\t[ID] int NOT NULL,\r\n\t[Name] varchar(256) NOT NULL,\r\n\t[OriginalGravity] decimal(18,2) NOT NULL\r\n)\r\n\r\nGO\r\n", p.Sql);
+			Assert.AreEqual("CREATE TYPE [BeerTable]\r\nAS TABLE\r\n(\r\n\t[ID] int NULL,\r\n\t[Name] varchar(256) NOT NULL,\r\n\t[OriginalGravity] decimal(18,2) NOT NULL\r\n)\r\n\r\nGO\r\n", p.Sql);
 		}
 
 		[Test]
