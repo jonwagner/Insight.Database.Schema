@@ -170,9 +170,9 @@ namespace Insight.Database.Schema
 		{
 			IList<ColumnDefinition> columns = _columnProvider.GetColumns(_tableName);
 
-            // we need primary keys
-            if (!columns.Any(c => c.IsKey))
-                throw new InvalidOperationException(String.Format(CultureInfo.InvariantCulture, "Cannot generate AutoProcs for a table with no primary keys ({0}).", _tableName));
+			// we need primary keys
+			if (!columns.Any(c => c.IsKey))
+				throw new InvalidOperationException(String.Format(CultureInfo.InvariantCulture, "Cannot generate AutoProcs for a table with no primary keys ({0}).", _tableName));
 
 			// generate the sql
 			string sql = "";
@@ -246,6 +246,17 @@ namespace Insight.Database.Schema
 			return sb.ToString();
 		}
 
+		private string GenerateOutputTable(IList<ColumnDefinition> columns)
+		{
+			StringBuilder sb = new StringBuilder();
+
+			sb.AppendLine("DECLARE @T TABLE(");
+			sb.Append(string.Join(",\n", columns.Select(c => string.Format("{0} {1}", c.ColumnName, c.SqlType))));
+			sb.AppendLine(")");
+
+			return sb.ToString();
+		}
+
 		/// <summary>
 		/// Generates the Insert procedure.
 		/// </summary>
@@ -253,7 +264,7 @@ namespace Insight.Database.Schema
 		/// <returns>The stored procedure SQL.</returns>
 		private string GenerateInsertSql(IList<ColumnDefinition> columns)
 		{
-			IEnumerable<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly);
+			IList<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly).ToList();
 			IEnumerable<ColumnDefinition> insertable = columns.Where(c => !c.IsReadOnly);
 
 			// generate the sql for each proc and install them
@@ -264,6 +275,11 @@ namespace Insight.Database.Schema
 			sb.AppendLine(Join(insertable, ",", "{1} {2} {4}"));
 			sb.AppendLine(")");
 			sb.AppendLine("AS");
+			sb.AppendLine("");
+			if (outputs.Any())
+			{
+				sb.AppendLine(GenerateOutputTable(outputs));
+			}
 			sb.AppendFormat("INSERT INTO {0}", _tableName);
 			sb.AppendLine();
 			sb.AppendLine("(");
@@ -273,12 +289,16 @@ namespace Insight.Database.Schema
 			{
 				sb.AppendLine("OUTPUT");
 				sb.AppendLine(Join(outputs, ",", "Inserted.{0}"));
+				sb.AppendLine("INTO @T");
 			}
 			sb.AppendLine("VALUES");
 			sb.AppendLine("(");
 			sb.AppendLine(Join(insertable, ",", "{1}"));
 			sb.AppendLine(")");
-
+			if (outputs.Any())
+			{
+				sb.AppendLine("SELECT * FROM @T");
+			}
 			return sb.ToString();
 		}
 
@@ -291,7 +311,7 @@ namespace Insight.Database.Schema
 		{
 			IEnumerable<ColumnDefinition> inputs = columns.Where(c => c.IsKey || !c.IsReadOnly || c.IsRowVersion);
 			IEnumerable<ColumnDefinition> keys = columns.Where(c => c.IsKey);
-			IEnumerable<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly);
+			IList<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly).ToList();
 			IEnumerable<ColumnDefinition> updatable = columns.Where(c => !c.IsKey && !c.IsReadOnly);
 			ColumnDefinition timestamp = columns.Where(c => c.IsRowVersion).SingleOrDefault();
 
@@ -305,7 +325,10 @@ namespace Insight.Database.Schema
 			sb.AppendLine(Join(inputs, ",", "{1} {2} {4}"));
 			sb.AppendLine(")");
 			sb.AppendLine("AS");
-
+			if (outputs.Any())
+			{
+				sb.AppendLine(GenerateOutputTable(outputs));
+			}
 			if (updatable.Any())
 			{
 				sb.AppendFormat("UPDATE {0} SET", _tableName);
@@ -315,7 +338,8 @@ namespace Insight.Database.Schema
 				{
 					sb.AppendLine("OUTPUT");
 					sb.AppendLine(Join(outputs, ",", "Inserted.{0}"));
-				} 
+					sb.AppendLine("INTO @T");
+				}
 				sb.AppendLine("WHERE");
 				sb.AppendLine(Join(keys, " AND", "{0}={1}"));
 
@@ -323,6 +347,10 @@ namespace Insight.Database.Schema
 				{
 					sb.AppendLine(String.Format(CultureInfo.InvariantCulture, "AND ({0}={1} OR {1} IS NULL)", timestamp.Name, timestamp.ParameterName));
 					sb.AppendLine(GetConcurrencyCheck("1", false));
+				}
+				if (outputs.Any())
+				{
+					sb.AppendLine("SELECT * FROM @T");
 				}
 			}
 			else
@@ -345,7 +373,7 @@ namespace Insight.Database.Schema
 			IEnumerable<ColumnDefinition> keys = columns.Where(c => c.IsKey);
 			IEnumerable<ColumnDefinition> updatable = columns.Where(c => !c.IsKey && !c.IsReadOnly);
 			IEnumerable<ColumnDefinition> insertable = columns.Where(c => !c.IsReadOnly);
-			IEnumerable<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly);
+			IList<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly).ToList();
 			ColumnDefinition timestamp = columns.Where(c => c.IsRowVersion).SingleOrDefault();
 
 			VerifyOptimisticTimestamp(optimistic, timestamp);
@@ -358,7 +386,10 @@ namespace Insight.Database.Schema
 			sb.AppendLine(Join(inputs, ",", "{1} {2} {4}"));
 			sb.AppendLine(")");
 			sb.AppendLine("AS");
-
+			if (outputs.Any())
+			{
+				sb.AppendLine(GenerateOutputTable(outputs));
+			}
 			if (optimistic)
 				sb.AppendLine("BEGIN TRANSACTION; SET XACT_ABORT ON;");
 
@@ -399,6 +430,7 @@ namespace Insight.Database.Schema
 				{
 					sb.AppendLine("OUTPUT");
 					sb.AppendLine(Join(outputs, ",", "Inserted.{0}"));
+					sb.AppendLine("INTO @T");
 				}
 				sb.AppendLine(";");
 			}
@@ -413,7 +445,10 @@ namespace Insight.Database.Schema
 				sb.AppendLine(GetConcurrencyCheck("1", true));
 				sb.AppendLine("COMMIT");
 			}
-
+			if (outputs.Any())
+			{
+				sb.AppendLine("SELECT * FROM @T");
+			}
 			return sb.ToString();
 		}
 
@@ -530,7 +565,7 @@ namespace Insight.Database.Schema
 		/// <returns>The stored procedure SQL.</returns>
 		private string GenerateInsertManySql(IList<ColumnDefinition> columns)
 		{
-			IEnumerable<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly);
+			IList<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly).ToList();
 			IEnumerable<ColumnDefinition> insertable = columns.Where(c => !c.IsReadOnly);
 
 			string parameterName = SqlParser.UnformatSqlName(_singularTableName);
@@ -540,6 +575,10 @@ namespace Insight.Database.Schema
 			sb.AppendFormat("CREATE PROCEDURE {0} (@{1} {2} READONLY)", MakeProcName("Insert", plural: true), parameterName, MakeTableName("Table"));
 			sb.AppendLine();
 			sb.AppendLine("AS");
+			if (outputs.Any())
+			{
+				sb.AppendLine(GenerateOutputTable(outputs));
+			}
 			sb.AppendFormat("INSERT INTO {0}", _tableName);
 			sb.AppendLine();
 			if (insertable.Any())
@@ -552,12 +591,16 @@ namespace Insight.Database.Schema
 			{
 				sb.AppendLine("OUTPUT");
 				sb.AppendLine(Join(outputs, ",", "Inserted.{0}"));
+				sb.AppendLine("INTO @T");
 			}
 			sb.AppendLine("SELECT");
 			sb.AppendLine(Join(insertable, ",", "{0}"));
 			sb.AppendFormat("FROM @{1}", _tableName, parameterName);
 			sb.AppendLine();
-
+			if (outputs.Any())
+			{
+				sb.AppendLine("SELECT * FROM @T");
+			}
 			return sb.ToString();
 		}
 
@@ -570,7 +613,7 @@ namespace Insight.Database.Schema
 		{
 			IEnumerable<ColumnDefinition> keys = columns.Where(c => c.IsKey);
 			IEnumerable<ColumnDefinition> updatable = columns.Where(c => !c.IsReadOnly);
-			IEnumerable<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly);
+			IList<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly).ToList();
 			ColumnDefinition timestamp = columns.Where(c => c.IsRowVersion).SingleOrDefault();
 
 			VerifyOptimisticTimestamp(optimistic, timestamp);
@@ -582,7 +625,10 @@ namespace Insight.Database.Schema
 			sb.AppendFormat("CREATE PROCEDURE {0} (@{1} {2} READONLY)", MakeProcName("Update", plural: true), parameterName, MakeTableName("Table"));
 			sb.AppendLine();
 			sb.AppendLine("AS");
-
+			if (outputs.Any())
+			{
+				sb.AppendLine(GenerateOutputTable(outputs));
+			}
 			if (optimistic)
 			{
 				sb.AppendLine("BEGIN TRANSACTION; SET XACT_ABORT ON;");
@@ -607,7 +653,8 @@ namespace Insight.Database.Schema
 			{
 				sb.AppendLine("OUTPUT");
 				sb.AppendLine(Join(outputs, ",", "Inserted.{0}"));
-			} 
+				sb.AppendLine("INTO @T");
+			}
 			sb.AppendLine(";");
 
 			if (optimistic)
@@ -615,7 +662,10 @@ namespace Insight.Database.Schema
 				sb.AppendLine(GetConcurrencyCheck("@expected", true));
 				sb.AppendLine("COMMIT");
 			}
-
+			if (outputs.Any())
+			{
+				sb.AppendLine("SELECT * FROM @T");
+			}
 			return sb.ToString();
 		}
 
@@ -629,7 +679,7 @@ namespace Insight.Database.Schema
 			IEnumerable<ColumnDefinition> keys = columns.Where(c => c.IsKey);
 			IEnumerable<ColumnDefinition> updatable = columns.Where(c => !c.IsKey && !c.IsReadOnly);
 			IEnumerable<ColumnDefinition> insertable = columns.Where(c => !c.IsReadOnly);
-			IEnumerable<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly);
+			IList<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly).ToList();
 			ColumnDefinition timestamp = columns.Where(c => c.IsRowVersion).SingleOrDefault();
 
 			VerifyOptimisticTimestamp(optimistic, timestamp);
@@ -641,7 +691,10 @@ namespace Insight.Database.Schema
 			sb.AppendFormat("CREATE PROCEDURE {0} (@{1} {2} READONLY)", MakeProcName("Upsert", plural: true), parameterName, MakeTableName("Table"));
 			sb.AppendLine();
 			sb.AppendLine("AS");
-
+			if (outputs.Any())
+			{
+				sb.AppendLine(GenerateOutputTable(outputs));
+			}
 			if (optimistic)
 			{
 				sb.AppendLine("BEGIN TRANSACTION; SET XACT_ABORT ON;");
@@ -680,6 +733,7 @@ namespace Insight.Database.Schema
 			{
 				sb.AppendLine("OUTPUT");
 				sb.AppendLine(Join(outputs, ",", "Inserted.{0}"));
+				sb.AppendLine("INTO @T");
 			}
 			sb.AppendLine(";");
 
@@ -688,7 +742,10 @@ namespace Insight.Database.Schema
 				sb.AppendLine(GetConcurrencyCheck("@expected", true));
 				sb.AppendLine("COMMIT");
 			}
-
+			if (outputs.Any())
+			{
+				sb.AppendLine("SELECT * FROM @T");
+			}
 			return sb.ToString();
 		}
 
@@ -759,12 +816,12 @@ namespace Insight.Database.Schema
 			sb.Append(Join(columns, ",", "{1} {2} = NULL"));
 			sb.AppendLine(",");
 			sb.AppendLine("\t@Top [int] = NULL,");
-            sb.AppendLine("\t@Skip [int] = NULL,");
-            sb.AppendLine("\t@OrderBy [nvarchar](256) = NULL,");
+			sb.AppendLine("\t@Skip [int] = NULL,");
+			sb.AppendLine("\t@OrderBy [nvarchar](256) = NULL,");
 			sb.AppendLine("\t@ThenBy [nvarchar](256) = NULL,");
 			sb.AppendLine(Join(columns, ",", "{1}Operator [varchar](10) = '='"));
 			sb.AppendLine(")");
-			if(_executeAsOwner)
+			if (_executeAsOwner)
 				sb.AppendLine("WITH EXECUTE AS OWNER");
 			sb.AppendLine("AS");
 			sb.AppendLine("DECLARE @sql [nvarchar](MAX) = 'SELECT '");
@@ -787,14 +844,14 @@ namespace Insight.Database.Schema
 			sb.AppendLine(Join(columns, ",", "'{0}', '{0} DESC'"));
 			sb.AppendLine(") THEN ',' + @ThenBy ELSE ' ORDER BY INVALID COLUMN ' END");
 
-            // handle top/skip -> offset/fetch
-            // if skip is specified, convert TOP to OFFSET
-            // if order by is not specified, then order by the first column
-            sb.AppendLine("IF @Skip IS NOT NULL BEGIN");
-            sb.AppendLine("\tIF @OrderBy IS NULL SET @sql = @sql + ' ORDER BY 1'");
-            sb.AppendLine("\tSET @sql = @sql + ' OFFSET @Skip ROWS'");
-            sb.AppendLine("\tIF @Top IS NOT NULL SET @sql = @sql + ' FETCH NEXT @Top ROWS ONLY'");
-            sb.AppendLine("END");
+			// handle top/skip -> offset/fetch
+			// if skip is specified, convert TOP to OFFSET
+			// if order by is not specified, then order by the first column
+			sb.AppendLine("IF @Skip IS NOT NULL BEGIN");
+			sb.AppendLine("\tIF @OrderBy IS NULL SET @sql = @sql + ' ORDER BY 1'");
+			sb.AppendLine("\tSET @sql = @sql + ' OFFSET @Skip ROWS'");
+			sb.AppendLine("\tIF @Top IS NOT NULL SET @sql = @sql + ' FETCH NEXT @Top ROWS ONLY'");
+			sb.AppendLine("END");
 
 			sb.AppendLine();
 			sb.AppendLine("EXEC sp_executesql @sql, N'@Top [int],@Skip [int],");
@@ -815,7 +872,7 @@ namespace Insight.Database.Schema
 		private string MakeProcName(string type, bool plural)
 		{
 			// use the user-specified name or make one from the type
-			return SqlParser.ReformatSqlName(String.Format (CultureInfo.InvariantCulture, Name ?? (plural ? "{3}{0}{1}" : "{3}{0}{2}"), 
+			return SqlParser.ReformatSqlName(String.Format(CultureInfo.InvariantCulture, Name ?? (plural ? "{3}{0}{1}" : "{3}{0}{2}"),
 				type,
 				_pluralTableName,
 				_singularTableName,
@@ -967,9 +1024,9 @@ namespace Insight.Database.Schema
 
 			Optimistic = 1 << 31,
 
-			All = 
-				Table | IdTable | 
-				Select | Insert | Update | Upsert | Delete | 
+			All =
+				Table | IdTable |
+				Select | Insert | Update | Upsert | Delete |
 				SelectMany | InsertMany | UpdateMany | UpsertMany | DeleteMany |
 				Find
 		}
