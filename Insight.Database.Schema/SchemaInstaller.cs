@@ -562,7 +562,7 @@ namespace Insight.Database.Schema
 
 				// script the column drop
 				StringBuilder sb = new StringBuilder();
-				sb.AppendFormat("ALTER TABLE {0}", SqlParser.FormatSqlName(oldTableName));
+				sb.AppendFormat("ALTER TABLE {0}", SqlParser.ReformatSqlName(oldTableName));
 				sb.Append(" DROP");
 				sb.AppendLine(String.Join(",", missingColumns.Select((dynamic o) => String.Format(" COLUMN {0}", SqlParser.FormatSqlName(o.Name)))));
 				context.AddObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
@@ -572,7 +572,7 @@ namespace Insight.Database.Schema
 			if (addColumns.Any())
 			{
 				StringBuilder sb = new StringBuilder();
-				sb.AppendFormat("ALTER TABLE {0}", SqlParser.FormatSqlName(oldTableName));
+				sb.AppendFormat("ALTER TABLE {0}", SqlParser.ReformatSqlName(oldTableName));
 				sb.Append(" ADD ");
 				sb.AppendLine(String.Join(", ", addColumns.Select((dynamic o) => GetColumnDefinition(o) + GetDefaultDefinition(o))));
 				context.AddObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
@@ -591,7 +591,7 @@ namespace Insight.Database.Schema
 				if (!areColumnsEqual(column, oldColumn))
 				{
 					StringBuilder sb = new StringBuilder();
-					sb.AppendFormat("ALTER TABLE {0} ALTER COLUMN ", SqlParser.FormatSqlName(oldTableName));
+					sb.AppendFormat("ALTER TABLE {0} ALTER COLUMN ", SqlParser.ReformatSqlName(oldTableName));
 					sb.AppendFormat(GetColumnDefinition(column));
 					context.AddObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
 				}
@@ -603,7 +603,7 @@ namespace Insight.Database.Schema
 					if (oldColumn.DefaultName != null && !context.SchemaRegistry.Contains(getConstraintName(oldColumn)))
 					{
 						// script the default drop
-						string dropConstraint = String.Format("ALTER TABLE {0} DROP CONSTRAINT {1}", SqlParser.FormatSqlName(oldTableName), SqlParser.FormatSqlName(oldColumn.DefaultName));
+						string dropConstraint = String.Format("ALTER TABLE {0} DROP CONSTRAINT {1}", SqlParser.ReformatSqlName(oldTableName), SqlParser.FormatSqlName(oldColumn.DefaultName));
 						context.AddObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, dropConstraint));
 					}
 
@@ -612,7 +612,7 @@ namespace Insight.Database.Schema
 					{
 						// script the add
 						StringBuilder sb = new StringBuilder();
-						sb.AppendFormat("ALTER TABLE {0} ADD ", SqlParser.FormatSqlName(oldTableName));
+						sb.AppendFormat("ALTER TABLE {0} ADD ", SqlParser.ReformatSqlName(oldTableName));
 						sb.AppendFormat(GetDefaultDefinition(column));
 						sb.AppendFormat(" FOR {0}", SqlParser.FormatSqlName(column.Name));
 						context.AddObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
