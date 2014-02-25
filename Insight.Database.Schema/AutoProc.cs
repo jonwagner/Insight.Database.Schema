@@ -23,7 +23,7 @@ namespace Insight.Database.Schema
 		/// <summary>
 		/// A string that is added to the hash of the dependencies so that the AutoProc can be forced to change if the internal implementation changes.
 		/// </summary>
-		private static string VersionSignature = "2.1.0.1";
+		private static string VersionSignature = "2.1.0.2";
 
 		/// <summary>
 		/// The exception thrown when an optimistic concurrency error is detected.
@@ -261,7 +261,7 @@ namespace Insight.Database.Schema
 			sb.AppendFormat("CREATE PROCEDURE {0}", MakeProcName("Insert", plural: false));
 			sb.AppendLine();
 			sb.AppendLine("(");
-			sb.AppendLine(Join(insertable, ",", "{1} {2}"));
+			sb.AppendLine(Join(insertable, ",", "{1} {2} {4}"));
 			sb.AppendLine(")");
 			sb.AppendLine("AS");
 			sb.AppendFormat("INSERT INTO {0}", _tableName);
@@ -302,7 +302,7 @@ namespace Insight.Database.Schema
 			sb.AppendFormat("CREATE PROCEDURE {0}", MakeProcName("Update", plural: false));
 			sb.AppendLine();
 			sb.AppendLine("(");
-			sb.AppendLine(Join(inputs, ",", "{1} {2}"));
+			sb.AppendLine(Join(inputs, ",", "{1} {2} {4}"));
 			sb.AppendLine(")");
 			sb.AppendLine("AS");
 
@@ -355,7 +355,7 @@ namespace Insight.Database.Schema
 			sb.AppendFormat("CREATE PROCEDURE {0}", MakeProcName("Upsert", plural: false));
 			sb.AppendLine();
 			sb.AppendLine("(");
-			sb.AppendLine(Join(inputs, ",", "{1} {2}"));
+			sb.AppendLine(Join(inputs, ",", "{1} {2} {4}"));
 			sb.AppendLine(")");
 			sb.AppendLine("AS");
 
@@ -902,7 +902,8 @@ namespace Insight.Database.Schema
 				col.ColumnName, 
 				col.ParameterName, 
 				col.SqlType, 
-				(col.IsUpdateNullable || col.IsIdentity) ? "NULL" : "NOT NULL")));
+				(col.IsUpdateNullable || col.IsIdentity) ? "NULL" : "NOT NULL",
+				col.IsUpdateNullable ? "= NULL" : "")));
 		}
 
 		private static string Join(ColumnDefinition column, string divider, string template)
