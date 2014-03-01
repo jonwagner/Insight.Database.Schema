@@ -23,7 +23,7 @@ namespace Insight.Database.Schema
 		/// <summary>
 		/// A string that is added to the hash of the dependencies so that the AutoProc can be forced to change if the internal implementation changes.
 		/// </summary>
-		private static string VersionSignature = "2.1.0.2";
+		private static string VersionSignature = "2.1.0.3";
 
 		/// <summary>
 		/// The exception thrown when an optimistic concurrency error is detected.
@@ -360,7 +360,7 @@ namespace Insight.Database.Schema
 			sb.AppendLine("AS");
 
 			if (optimistic)
-				sb.AppendLine("BEGIN TRANSACTION");
+				sb.AppendLine("BEGIN TRANSACTION; SET XACT_ABORT ON;");
 
 			if (updatable.Any())
 			{
@@ -585,7 +585,7 @@ namespace Insight.Database.Schema
 
 			if (optimistic)
 			{
-				sb.AppendLine("BEGIN TRANSACTION");
+				sb.AppendLine("BEGIN TRANSACTION; SET XACT_ABORT ON;");
 				sb.AppendLine("DECLARE @expected[int]");
 				sb.AppendLine(String.Format(CultureInfo.InvariantCulture, "SELECT @expected = COUNT(*) FROM @{0}", parameterName));
 			}
@@ -644,7 +644,7 @@ namespace Insight.Database.Schema
 
 			if (optimistic)
 			{
-				sb.AppendLine("BEGIN TRANSACTION");
+				sb.AppendLine("BEGIN TRANSACTION; SET XACT_ABORT ON;");
 				sb.AppendLine("DECLARE @expected[int]");
 				sb.AppendLine(String.Format(CultureInfo.InvariantCulture, "SELECT @expected = COUNT(*) FROM @{0}", parameterName));
 			}
@@ -714,7 +714,7 @@ namespace Insight.Database.Schema
 
 			if (optimistic)
 			{
-				sb.AppendLine("BEGIN TRANSACTION");
+				sb.AppendLine("BEGIN TRANSACTION; SET XACT_ABORT ON;");
 				sb.AppendLine("DECLARE @expected[int]");
 				sb.AppendLine(String.Format(CultureInfo.InvariantCulture, "SELECT @expected = COUNT(*) FROM @{0}", parameterName));
 			}
