@@ -69,7 +69,7 @@ Only a little code is needed to deploy your SQL.
 	schema.Load("Beer.sql");
 
 	// automatically create the database
-	installer.CreateDatabase(connectionString);
+	SchemaInstaller.CreateDatabase(connectionString);
 
 	// automatically install it, or upgrade it
     using (SqlConnection connection = new SqlConnection (connectionString))
