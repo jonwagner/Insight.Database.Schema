@@ -200,6 +200,16 @@ namespace Insight.Database.Schema
 		}
 
 		/// <summary>
+		/// Splits a sql name.
+		/// </summary>
+		/// <param name="name">The name to split.</param>
+		/// <returns>The pieces.</returns>
+		internal static string[] SplitSqlName(string name)
+		{
+			return name.Split(_sqlNameDivider).Select(s => UnformatSqlName(s)).ToArray();
+		}
+
+		/// <summary>
 		/// Get the schema name from the name of a table
 		/// </summary>
 		/// <param name="tableName">The name of the table</param>

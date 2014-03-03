@@ -327,11 +327,24 @@ namespace Insight.Database.Schema
 
 					case SchemaObjectType.Default:
 						{
+							var split = SqlParser.SplitSqlName(Name);
+							var pieces = split.Reverse().GetEnumerator();
+
+							pieces.MoveNext();
+							string columnName = pieces.Current;
+							pieces.MoveNext();
+							string tableName = pieces.Current;
+							string schemaName = (pieces.MoveNext()) ? pieces.Current : "dbo";
+
 							command = String.Format(CultureInfo.InvariantCulture, @"SELECT COUNT(*)
 							FROM sys.default_constraints d
+							JOIN sys.schemas s ON (d.schema_id = s.schema_id)
 							JOIN sys.objects o ON (d.parent_object_id = o.object_id)
 							JOIN sys.columns c ON (c.object_id = o.object_id AND c.column_id = d.parent_column_id)
-							WHERE o.name = '{0}' AND c.name = '{1}'", SqlParser.TableNameFromIndexName(Name), SqlParser.IndexNameFromFullName(Name));
+							WHERE s.Name = '{0}' AND o.name = '{1}' AND c.name = '{2}'",
+								schemaName,
+								tableName,
+								columnName);
 						}
 						break;
 
