@@ -99,7 +99,7 @@ namespace Insight.Database.Schema.Tests
 
 			AutoProc p = new AutoProc("AUTOPROC Insert [Beer]", columns.Object, null);
 
-			Assert.AreEqual("CREATE PROCEDURE [InsertBeer]\r\n(\r\n\t@ID int,\r\n\t@Name varchar(256),\r\n\t@OriginalGravity decimal(18,2)\r\n)\r\nAS\r\nINSERT INTO [Beer]\r\n(\r\n\t[ID],\r\n\t[Name],\r\n\t[OriginalGravity]\r\n)\r\nVALUES\r\n(\r\n\t@ID,\r\n\t@Name,\r\n\t@OriginalGravity\r\n)\r\n\r\nGO\r\n", p.Sql);
+			Assert.AreEqual("CREATE PROCEDURE [InsertBeer]\r\n(\r\n\t@ID int,\r\n\t@Name varchar(256),\r\n\t@OriginalGravity decimal(18,2)\r\n)\r\nAS\r\n\r\nINSERT INTO [Beer]\r\n(\r\n\t[ID],\r\n\t[Name],\r\n\t[OriginalGravity]\r\n)\r\nVALUES\r\n(\r\n\t@ID,\r\n\t@Name,\r\n\t@OriginalGravity\r\n)\r\n\r\nGO\r\n", p.Sql);
 		}
 		#endregion
 
@@ -115,7 +115,7 @@ namespace Insight.Database.Schema.Tests
 
 			AutoProc p = new AutoProc("AUTOPROC Insert [Users] Name={1}_{0}", columns.Object, null);
 
-			Assert.AreEqual("CREATE PROCEDURE [Users_Insert]\r\n(\r\n\t@ID int\r\n)\r\nAS\r\nINSERT INTO [Users]\r\n(\r\n\t[ID]\r\n)\r\nVALUES\r\n(\r\n\t@ID\r\n)\r\n\r\nGO\r\n", p.Sql);
+			Assert.AreEqual("CREATE PROCEDURE [Users_Insert]\r\n(\r\n\t@ID int\r\n)\r\nAS\r\n\r\nINSERT INTO [Users]\r\n(\r\n\t[ID]\r\n)\r\nVALUES\r\n(\r\n\t@ID\r\n)\r\n\r\nGO\r\n", p.Sql);
 		}
 		#endregion
 
@@ -156,7 +156,7 @@ namespace Insight.Database.Schema.Tests
 		{
 			AutoProc p = new AutoProc("AUTOPROC Insert [Beer] InsertBeer", Columns, null);
 
-			Assert.AreEqual("CREATE PROCEDURE [InsertBeer]\r\n(\r\n\t@Name varchar(256),\r\n\t@OriginalGravity decimal(18,2)\r\n)\r\nAS\r\nINSERT INTO [Beer]\r\n(\r\n\t[Name],\r\n\t[OriginalGravity]\r\n)\r\nOUTPUT\r\n\tInserted.[ID]\r\nVALUES\r\n(\r\n\t@Name,\r\n\t@OriginalGravity\r\n)\r\n\r\nGO\r\n", p.Sql);
+			Assert.AreEqual("CREATE PROCEDURE [InsertBeer]\r\n(\r\n\t@Name varchar(256),\r\n\t@OriginalGravity decimal(18,2)\r\n)\r\nAS\r\n\r\nDECLARE @T TABLE(\r\n[ID] int)\r\n\r\nINSERT INTO [Beer]\r\n(\r\n\t[Name],\r\n\t[OriginalGravity]\r\n)\r\nOUTPUT\r\n\tInserted.[ID]\r\nINTO @T\r\nVALUES\r\n(\r\n\t@Name,\r\n\t@OriginalGravity\r\n)\r\nSELECT * FROM @T\r\n\r\nGO\r\n", p.Sql);
 		}
 
 		[Test]
@@ -164,7 +164,7 @@ namespace Insight.Database.Schema.Tests
 		{
 			AutoProc p = new AutoProc("AUTOPROC Update [Beer] UpdateBeer", Columns, null);
 
-			Assert.AreEqual("CREATE PROCEDURE [UpdateBeer]\r\n(\r\n\t@ID int,\r\n\t@Name varchar(256),\r\n\t@OriginalGravity decimal(18,2)\r\n)\r\nAS\r\nUPDATE [Beer] SET\r\n\t[Name]=@Name,\r\n\t[OriginalGravity]=@OriginalGravity\r\nOUTPUT\r\n\tInserted.[ID]\r\nWHERE\r\n\t[ID]=@ID\r\n\r\nGO\r\n", p.Sql);
+			Assert.AreEqual("CREATE PROCEDURE [UpdateBeer]\r\n(\r\n\t@ID int,\r\n\t@Name varchar(256),\r\n\t@OriginalGravity decimal(18,2)\r\n)\r\nAS\r\nDECLARE @T TABLE(\r\n[ID] int)\r\n\r\nUPDATE [Beer] SET\r\n\t[Name]=@Name,\r\n\t[OriginalGravity]=@OriginalGravity\r\nOUTPUT\r\n\tInserted.[ID]\r\nINTO @T\r\nWHERE\r\n\t[ID]=@ID\r\nSELECT * FROM @T\r\n\r\nGO\r\n", p.Sql);
 		}
 
 		[Test]
@@ -188,7 +188,7 @@ namespace Insight.Database.Schema.Tests
 
 			AutoProc p = new AutoProc("AUTOPROC Insert [Beer] InsertBeer", columns.Object, null);
 
-			Assert.AreEqual("CREATE PROCEDURE [InsertBeer]\r\n(\r\n\t@ID int,\r\n\t@Name varchar(256),\r\n\t@OriginalGravity decimal(18,2)\r\n)\r\nAS\r\nINSERT INTO [Beer]\r\n(\r\n\t[ID],\r\n\t[Name],\r\n\t[OriginalGravity]\r\n)\r\nVALUES\r\n(\r\n\t@ID,\r\n\t@Name,\r\n\t@OriginalGravity\r\n)\r\n\r\nGO\r\n", p.Sql);
+			Assert.AreEqual("CREATE PROCEDURE [InsertBeer]\r\n(\r\n\t@ID int,\r\n\t@Name varchar(256),\r\n\t@OriginalGravity decimal(18,2)\r\n)\r\nAS\r\n\r\nINSERT INTO [Beer]\r\n(\r\n\t[ID],\r\n\t[Name],\r\n\t[OriginalGravity]\r\n)\r\nVALUES\r\n(\r\n\t@ID,\r\n\t@Name,\r\n\t@OriginalGravity\r\n)\r\n\r\nGO\r\n", p.Sql);
 		}
 
 		[Test]
@@ -221,7 +221,7 @@ namespace Insight.Database.Schema.Tests
 		{
 			AutoProc p = new AutoProc("AUTOPROC InsertMany [Beer]", Columns, null);
 
-			Assert.AreEqual("CREATE PROCEDURE [InsertBeers] (@Beer [BeerTable] READONLY)\r\nAS\r\nINSERT INTO [Beer]\r\n(\r\n\t[Name],\r\n\t[OriginalGravity]\r\n)\r\nOUTPUT\r\n\tInserted.[ID]\r\nSELECT\r\n\t[Name],\r\n\t[OriginalGravity]\r\nFROM @Beer\r\n\r\nGO\r\n", p.Sql);
+			Assert.AreEqual("CREATE PROCEDURE [InsertBeers] (@Beer [BeerTable] READONLY)\r\nAS\r\nDECLARE @T TABLE(\r\n[ID] int)\r\n\r\nINSERT INTO [Beer]\r\n(\r\n\t[Name],\r\n\t[OriginalGravity]\r\n)\r\nOUTPUT\r\n\tInserted.[ID]\r\nINTO @T\r\nSELECT\r\n\t[Name],\r\n\t[OriginalGravity]\r\nFROM @Beer\r\nSELECT * FROM @T\r\n\r\nGO\r\n", p.Sql);
 		}
 		#endregion
 

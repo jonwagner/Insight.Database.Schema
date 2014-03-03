@@ -246,12 +246,12 @@ namespace Insight.Database.Schema
 			return sb.ToString();
 		}
 
-		private string GenerateOutputTable(IList<ColumnDefinition> columns)
+		private static string GenerateOutputTable(IList<ColumnDefinition> columns)
 		{
 			StringBuilder sb = new StringBuilder();
 
 			sb.AppendLine("DECLARE @T TABLE(");
-			sb.Append(string.Join(",\n", columns.Select(c => string.Format("{0} {1}", c.ColumnName, c.SqlType))));
+			sb.Append(String.Join(",\n", columns.Select(c => String.Format(CultureInfo.InvariantCulture, "{0} {1}", c.ColumnName, c.SqlType))));
 			sb.AppendLine(")");
 
 			return sb.ToString();
@@ -272,7 +272,7 @@ namespace Insight.Database.Schema
 			sb.AppendFormat("CREATE PROCEDURE {0}", MakeProcName("Insert", plural: false));
 			sb.AppendLine();
 			sb.AppendLine("(");
-			sb.AppendLine(Join(insertable, ",", "{1} {2} {4}"));
+			sb.AppendLine(Join(insertable, ",", "{1} {2}{4}"));
 			sb.AppendLine(")");
 			sb.AppendLine("AS");
 			sb.AppendLine("");
@@ -322,7 +322,7 @@ namespace Insight.Database.Schema
 			sb.AppendFormat("CREATE PROCEDURE {0}", MakeProcName("Update", plural: false));
 			sb.AppendLine();
 			sb.AppendLine("(");
-			sb.AppendLine(Join(inputs, ",", "{1} {2} {4}"));
+			sb.AppendLine(Join(inputs, ",", "{1} {2}{4}"));
 			sb.AppendLine(")");
 			sb.AppendLine("AS");
 			if (outputs.Any())
@@ -383,7 +383,7 @@ namespace Insight.Database.Schema
 			sb.AppendFormat("CREATE PROCEDURE {0}", MakeProcName("Upsert", plural: false));
 			sb.AppendLine();
 			sb.AppendLine("(");
-			sb.AppendLine(Join(inputs, ",", "{1} {2} {4}"));
+			sb.AppendLine(Join(inputs, ",", "{1} {2}{4}"));
 			sb.AppendLine(")");
 			sb.AppendLine("AS");
 			if (outputs.Any())
@@ -960,7 +960,7 @@ namespace Insight.Database.Schema
 				col.ParameterName, 
 				col.SqlType, 
 				(col.IsUpdateNullable || col.IsIdentity) ? "NULL" : "NOT NULL",
-				col.IsUpdateNullable ? "= NULL" : "")));
+				col.IsUpdateNullable ? " = NULL" : "")));
 		}
 
 		private static string Join(ColumnDefinition column, string divider, string template)
