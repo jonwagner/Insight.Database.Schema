@@ -516,7 +516,7 @@ namespace Insight.Database.Schema
 				((String.Compare(c1.DefaultName, c2.DefaultName, StringComparison.OrdinalIgnoreCase) == 0) || (c1.DefaultIsSystemNamed == true && c2.DefaultIsSystemNamed == true)) &&
 				c1.DefaultDefinition == c2.DefaultDefinition
 				;
-			Func<dynamic, string> getConstraintName = (dynamic c) => SqlParser.FormatSqlName(oldTableName) + "." + SqlParser.FormatSqlName(c.Name);
+			Func<dynamic, string> getConstraintName = (dynamic c) => new SqlName(oldTableName, 2).Append(c.Name).FullName;
 
 			// get the columns for each of the tables
 			var oldColumns = GetColumnsForTable(oldTableName);

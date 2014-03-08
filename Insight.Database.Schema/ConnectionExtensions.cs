@@ -38,7 +38,7 @@ namespace Insight.Database.Schema
 			return cmd.ExecuteNonQuery();
 		}
 
-		public static T ExecuteScalarSql<T>(this IDbConnection connection, string sql, IDictionary<string, object> parameters)
+		public static T ExecuteScalarSql<T>(this IDbConnection connection, string sql, IDictionary<string, object> parameters = null)
 		{
 			var cmd = connection.CreateCommand();
 			cmd.CommandText = sql;

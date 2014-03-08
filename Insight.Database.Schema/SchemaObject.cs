@@ -10,6 +10,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using Insight.Database;
+using Insight.Database.Schema.Implementation;
 #endregion
 
 namespace Insight.Database.Schema
@@ -18,6 +19,8 @@ namespace Insight.Database.Schema
     public sealed class SchemaObject
     {
         #region Constructors
+		private SchemaImpl _implementation;
+
         /// <summary>
         /// Constructs a SchemaObject of the given type, name, and sql script
         /// </summary>
@@ -35,6 +38,7 @@ namespace Insight.Database.Schema
             _type = type;
             _name = name;
             _sql = sql;
+			_implementation = SchemaImpl.GetImplementation(_type, _name, _sql);
         }
 
         /// <summary>
@@ -46,7 +50,8 @@ namespace Insight.Database.Schema
         {
 			_sql = sql;
             ParseSql ();
-        }
+			_implementation = SchemaImpl.GetImplementation(_type, _name, _sql);
+		}
         #endregion
 
         #region Properties
@@ -113,31 +118,8 @@ namespace Insight.Database.Schema
         /// <param name="connection">The database connection to use</param>
 		internal void Install(RecordingDbConnection connection, IEnumerable<SchemaObject> objects)
         {
-			string sql = Sql;
-
-            // for auto-procs, convert the comment into a list of stored procedures
-			if (SchemaObjectType == Schema.SchemaObjectType.AutoProc)
-			{
-				sql = new AutoProc(Name, new SqlColumnDefinitionProvider(connection), objects).Sql;
-				if (sql.Length == 0)
-					return;
-			}
-			
-			try
-			{
-				foreach (string s in _goSplit.Split(sql).Where(piece => !String.IsNullOrWhiteSpace(piece)))
-					connection.ExecuteSql(s);
-			}
-			catch (Exception e)
-			{
-				throw new InvalidOperationException(String.Format(CultureInfo.InvariantCulture, "Cannot create SQL object {0}: {1}", Name, e.Message), e);
-			}
+			_implementation.Install(connection, objects);
         }
-
-        /// <summary>
-        /// Determines how to split a GO statement in a batch.
-        /// </summary>
-		private static Regex _goSplit = new Regex (@"^\s*GO\s*$", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.Multiline);
 
         /// <summary>
         /// Verify that the object exists in the database.
@@ -147,247 +129,7 @@ namespace Insight.Database.Schema
 		[System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Maintainability", "CA1506:AvoidExcessiveClassCoupling"), System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Maintainability", "CA1505:AvoidUnmaintainableCode"), System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Maintainability", "CA1502:AvoidExcessiveComplexity")]
 		internal bool Exists(RecordingDbConnection connection)
 		{
-			return connection.DoNotLog(() => {
-
-                string command;
-
-			    switch (SchemaObjectType)
-			    {
-				    default:
-				    case SchemaObjectType.UserPreScript:
-				    case SchemaObjectType.Unused:
-				    case SchemaObjectType.Script:
-				    case SchemaObjectType.UserScript:
-                        // we can't check these
-					    return true;
-
-				    case SchemaObjectType.Permission:
-                        // check permissions by querying the permissions table
-					    Match m = Regex.Match(_name, String.Format(CultureInfo.InvariantCulture, @"(?<permission>\w+)\s+ON\s+(?<object>{0})\s+TO\s+(?<user>{0})", SqlParser.SqlNameExpression));
-
-						var permissions = connection.QuerySql(@"SELECT PermissionName=p.permission_name, ObjectType=ISNULL(o.type_desc, p.class_desc)
-							    FROM sys.database_principals u
-							    JOIN sys.database_permissions p ON (u.principal_id = p.grantee_principal_id)
-							    LEFT JOIN sys.objects o ON (p.class_desc = 'OBJECT_OR_COLUMN' AND p.major_id = o.object_id)
-							    LEFT JOIN sys.types t ON (p.class_desc = 'TYPE' AND p.major_id = t.user_type_id)
-							    LEFT JOIN sys.schemas s ON (p.class_desc = 'SCHEMA' AND p.major_id = s.schema_id)
-							    WHERE state_desc IN ('GRANT', 'GRANT_WITH_GRANT_OPTION') AND u.name = @UserName AND COALESCE(o.name, t.name, s.name) = @ObjectName",
-								new Dictionary<string, object>()
-								{ 
-									{ "UserName", SqlParser.UnformatSqlName(m.Groups["user"].Value) },
-									{ "ObjectName", SqlParser.UnformatSqlName(SqlParser.IndexNameFromFullName(m.Groups["object"].Value)) }
-								});
-
-						string type = permissions.Select((dynamic p) => p.ObjectType).FirstOrDefault();
-					    string permission = m.Groups["permission"].Value.ToUpperInvariant();
-
-					    switch (permission)
-					    {
-						    case "EXEC":
-							    return permissions.Any((dynamic p) => p.PermissionName == "EXECUTE");
-
-						    case "ALL":
-								switch (type)
-								{
-									case null:
-										// this happens on initial install when there is no database
-										return false;
-
-									case "SQL_STORED_PROCEDURE":
-										return permissions.Any((dynamic p) => p.PermissionName == "EXECUTE");
-
-									case "SQL_SCALAR_FUNCTION":
-										return permissions.Any((dynamic p) => p.PermissionName == "EXECUTE") &&
-											permissions.Any((dynamic p) => p.PermissionName == "REFERENCES");
-
-									case "SQL_INLINE_TABLE_VALUED_FUNCTION":
-									case "SQL_TABLE_VALUED_FUNCTION":
-									case "USER_TABLE":
-									case "VIEW":
-										return permissions.Any((dynamic p) => p.PermissionName == "REFERENCES") &&
-											permissions.Any((dynamic p) => p.PermissionName == "SELECT") &&
-											permissions.Any((dynamic p) => p.PermissionName == "INSERT") &&
-											permissions.Any((dynamic p) => p.PermissionName == "UPDATE") &&
-											permissions.Any((dynamic p) => p.PermissionName == "DELETE");
-
-									case "DATABASE":
-										return permissions.Any((dynamic p) => p.PermissionName == "BACKUP DATABASE") &&
-											permissions.Any((dynamic p) => p.PermissionName == "BACKUP LOG") &&
-											permissions.Any((dynamic p) => p.PermissionName == "CREATE DATABASE") &&
-											permissions.Any((dynamic p) => p.PermissionName == "CREATE DEFAULT") &&
-											permissions.Any((dynamic p) => p.PermissionName == "CREATE FUNCTION") &&
-											permissions.Any((dynamic p) => p.PermissionName == "CREATE PROCEDURE") &&
-											permissions.Any((dynamic p) => p.PermissionName == "CREATE RULE") &&
-											permissions.Any((dynamic p) => p.PermissionName == "CREATE TABLE") &&
-											permissions.Any((dynamic p) => p.PermissionName == "CREATE VIEW");
-
-									default:
-										throw new SchemaException(String.Format(CultureInfo.InvariantCulture, "GRANT ALL is not supported for {0} objects", type));
-								}
-
-							default:
-								return permissions.Any((dynamic p) => p.PermissionName == permission);
-						}
-
-				    case SchemaObjectType.Role:
-					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.database_principals WHERE name = '{0}' AND type = 'R'", SqlParser.UnformatSqlName(Regex.Match(Name, @"ROLE (?<name>.*)").Groups["name"].Value));
-					    break;
-
-				    case SchemaObjectType.User:
-					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.database_principals WHERE name = '{0}' AND type = 'U'", SqlParser.UnformatSqlName(Name));
-					    break;
-
-				    case SchemaObjectType.Login:
-					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.server_principals WHERE name = '{0}' AND (type = 'U' OR type = 'S')", SqlParser.UnformatSqlName(Name));
-					    break;
-
-				    case SchemaObjectType.Schema:
-					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.schemas WHERE name = '{0}'", SqlParser.UnformatSqlName(Regex.Match(Name, @"SCHEMA (?<name>.*)").Groups["name"].Value));
-					    break;
-
-				    case SchemaObjectType.Certificate:
-					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.certificates WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					    break;
-
-				    case SchemaObjectType.MasterKey:
-					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.symmetric_keys WHERE name = '{0}'", "##MS_DatabaseMasterKey##");
-					    break;
-
-				    case SchemaObjectType.SymmetricKey:
-					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.symmetric_keys WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					    break;
-
-				    case SchemaObjectType.Service:
-					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.services WHERE name = '{0}'", SqlParser.UnformatSqlName(Regex.Match(Name, @"SERVICE (?<name>.*)").Groups["name"].Value));
-					    break;
-
-				    case SchemaObjectType.Queue:
-					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.service_queues WHERE name = '{0}'", SqlParser.UnformatSqlName(Regex.Match(Name, @"QUEUE (?<name>.*)").Groups["name"].Value));
-					    break;
-
-				    case SchemaObjectType.UserDefinedType:
-					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.types WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					    break;
-
-				    case SchemaObjectType.PartitionFunction:
-					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.partition_functions WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					    break;
-
-				    case SchemaObjectType.PartitionScheme:
-					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.partition_schemes WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					    break;
-
-				    case SchemaObjectType.Table:
-					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.tables WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					    break;
-
-				    case SchemaObjectType.IndexedView:
-				    case SchemaObjectType.View:
-					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.views WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					    break;
-
-				    case SchemaObjectType.AutoProc:
-					    return new AutoProc(Name, null, null).GetProcs().All(tuple =>
-					    {
-						    int count;
-						    switch (tuple.Item1)
-						    {
-							    case AutoProc.ProcTypes.Table:
-							    case AutoProc.ProcTypes.IdTable:
-									count = connection.ExecuteScalarSql<int>("SELECT COUNT (*) FROM sys.types WHERE name = @Name", new Dictionary<string, object>() { { "Name", SqlParser.UnformatSqlName(tuple.Item2) } });
-								    break;
-
-							    default:
-									count = connection.ExecuteScalarSql<int>("SELECT COUNT (*) FROM sys.objects WHERE name = @Name", new Dictionary<string, object>() { { "Name", SqlParser.UnformatSqlName(tuple.Item2) } });
-								    break;
-						    }
-						    return count > 0;
-					    });
-
-				    case SchemaObjectType.StoredProcedure:
-					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.procedures WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					    break;
-
-				    case SchemaObjectType.PrimaryKey:
-				    case SchemaObjectType.Index:
-				    case SchemaObjectType.PrimaryXmlIndex:
-				    case SchemaObjectType.SecondaryXmlIndex:
-					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.indexes WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					    break;
-
-				    case SchemaObjectType.Trigger:
-					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.triggers WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					    break;
-
-				    case SchemaObjectType.ForeignKey:
-				    case SchemaObjectType.Constraint:
-				    case SchemaObjectType.Function:
-					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.objects WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					    break;
-
-					case SchemaObjectType.Default:
-						{
-							var split = SqlParser.SplitSqlName(Name);
-							var pieces = split.Reverse().GetEnumerator();
-
-							pieces.MoveNext();
-							string columnName = pieces.Current;
-							pieces.MoveNext();
-							string tableName = pieces.Current;
-							string schemaName = (pieces.MoveNext()) ? pieces.Current : "dbo";
-
-							command = String.Format(CultureInfo.InvariantCulture, @"SELECT COUNT(*)
-							FROM sys.default_constraints d
-							JOIN sys.schemas s ON (d.schema_id = s.schema_id)
-							JOIN sys.objects o ON (d.parent_object_id = o.object_id)
-							JOIN sys.columns c ON (c.object_id = o.object_id AND c.column_id = d.parent_column_id)
-							WHERE s.Name = '{0}' AND o.name = '{1}' AND c.name = '{2}'",
-								schemaName,
-								tableName,
-								columnName);
-						}
-						break;
-
-				    case SchemaObjectType.MessageType:
-					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.service_message_types WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					    break;
-
-				    case SchemaObjectType.Contract:
-					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.service_contracts WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					    break;
-
-				    case SchemaObjectType.BrokerPriority:
-					    command = String.Format(CultureInfo.InvariantCulture, "SELECT COUNT (*) FROM sys.conversation_priorities WHERE name = '{0}'", SqlParser.UnformatSqlName(Name));
-					    break;
-			    }
-
-			    // execute the query
-			    return (int)connection.ExecuteScalarSql<int>(command, null) > 0;
-			});
-		}
-
-		/// <summary>
-		/// Determine if this is a type of object that we can drop.
-		/// </summary>
-		/// <param name="type">The type of the object.</param>
-		/// <returns>True if we know how to drop the object.</returns>
-		internal static bool CanDrop(SchemaObjectType type)
-		{
-			switch (type)
-			{
-				case SchemaObjectType.MasterKey:
-				case SchemaObjectType.Certificate:
-				case SchemaObjectType.SymmetricKey:
-					// don't drop as this could be a loss of data
-					return false;
-
-				case SchemaObjectType.UserScript:
-				case SchemaObjectType.UserPreScript:
-					// can't clean up user scripts
-					return false;
-			}
-
-			return true;
+			return _implementation.Exists(connection);
 		}
 
 		/// <summary>
@@ -397,45 +139,7 @@ namespace Insight.Database.Schema
 		/// <returns>True if we know how to drop the object.</returns>
 		internal bool CanModify(SchemaInstaller.InstallContext context, RecordingDbConnection connection)
 		{
-			// if we don't know how to drop it, then we can't modify it
-			if (!CanDrop(SchemaObjectType))
-				return false;
-
-			return connection.DoNotLog(() =>
-			{
-				switch (SchemaObjectType)
-				{
-					case SchemaObjectType.UserDefinedType:
-						// we can drop a udt unless it is used in a table
-						return connection.ExecuteScalarSql<int>("SELECT COUNT(*) FROM sys.types t JOIN sys.columns c ON (t.user_type_id = c.user_type_id) WHERE t.Name = @Name", new Dictionary<string, object>() { { "Name", SqlParser.UnformatSqlName(Name) } }) == 0;
-
-					case SchemaObjectType.PartitionFunction:
-						// we can drop a function as long as there are no schemes using it
-						return connection.ExecuteScalarSql<int>("SELECT COUNT(*) FROM sys.partition_functions p JOIN sys.partition_schemes s ON (p.function_id = s.function_id) WHERE p.name = @Name", new Dictionary<string, object>() { { "Name", SqlParser.UnformatSqlName(Name) } }) == 0;
-
-					case SchemaObjectType.PartitionScheme:
-						// we can drop a scheme as long as there are no schemes using it
-						return connection.ExecuteScalarSql<int>(@"SELECT COUNT(*) FROM sys.partition_schemes s 
-							WHERE s.name = @Name AND (
-								s.data_space_id IN (SELECT data_space_id FROM sys.indexes) OR 
-								s.data_space_id IN (SELECT lob_data_space_id FROM sys.tables) OR
-								s.data_space_id IN (SELECT filestream_data_space_id FROM sys.tables))
-							", new Dictionary<string, object>() { { "Name", SqlParser.UnformatSqlName(Name) } }) == 0;
-
-					case Schema.SchemaObjectType.Index:
-					case Schema.SchemaObjectType.PrimaryKey:
-						// azure can't drop the clustered index, so we have to warn if we are attempting to modify that
-						if (context.IsAzure)
-						{
-							if (Sql.IndexOf("NONCLUSTERED", StringComparison.OrdinalIgnoreCase) == -1 && Sql.IndexOf("CLUSTERED", StringComparison.OrdinalIgnoreCase) != -1)
-								return false;
-						}
-						break;
-				}
-
-				// everything else we can handle
-				return true;
-			});
+			return connection.DoNotLog(() => _implementation.CanModify(context, connection));
 		}
 
         /// <summary>
@@ -446,114 +150,10 @@ namespace Insight.Database.Schema
         /// <param name="objectName">The name of the object</param>
 		internal static void Drop(IDbConnection connection, SchemaObjectType type, string objectName)
         {
-			// if this is not a type we can drop then don't
-			if (!CanDrop(type))
-				return;
+			var implementation = SchemaImpl.GetImplementation(type, objectName, null);
 
-			IDbCommand command = connection.CreateCommand();
-
-            switch (type)
-            {
-                case SchemaObjectType.Table:
-                    command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP TABLE {0}", objectName);
-                    break;
-
-                case SchemaObjectType.UserDefinedType:
-                    command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP TYPE {0}", objectName);
-                    break;
-
-				case SchemaObjectType.Index:
-                case SchemaObjectType.PrimaryXmlIndex:
-                case SchemaObjectType.SecondaryXmlIndex:
-                    command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP INDEX {1} ON {0}", SqlParser.TableNameFromIndexName(objectName), SqlParser.IndexNameFromFullName(objectName));
-                    break;
-
-                case SchemaObjectType.PrimaryKey:
-                case SchemaObjectType.Constraint:
-                case SchemaObjectType.ForeignKey:
-					command.CommandText = String.Format(CultureInfo.InvariantCulture, "ALTER TABLE {0} DROP CONSTRAINT {1}", SqlParser.TableNameFromIndexName(objectName), SqlParser.IndexNameFromFullName(objectName));
-                    break;
-
-				case SchemaObjectType.Default:
-					command.CommandText = String.Format(CultureInfo.InvariantCulture, @"
-						-- ALTER TABLE DROP DEFAULT ON COLUMN
-						DECLARE @Name[nvarchar](256) 
-						SELECT @Name = d.name FROM sys.default_constraints d
-							JOIN sys.objects o ON (d.parent_object_id = o.object_id)
-							JOIN sys.columns c ON (c.object_id = o.object_id AND c.column_id = d.parent_column_id)
-							WHERE o.name = '{1}' AND c.name = '{2}'
-						DECLARE @sql[nvarchar](MAX) = 'ALTER TABLE {0} DROP CONSTRAINT [' + @Name + ']'
-						EXEC sp_executesql @sql
-					",
-					 SqlParser.FormatSqlName(SqlParser.TableNameFromIndexName(objectName)),
-					 SqlParser.TableNameFromIndexName(objectName), 
-					 SqlParser.IndexNameFromFullName(objectName));
-					break;
-
-				case SchemaObjectType.IndexedView:
-				case SchemaObjectType.View:
-                    command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP VIEW {0}", objectName);
-                    break;
-
-                case SchemaObjectType.Function:
-                    command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP FUNCTION {0}", objectName);
-                    break;
-
-                case SchemaObjectType.StoredProcedure:
-                    command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP PROCEDURE {0}", objectName);
-                    break;
-
-                case SchemaObjectType.Permission:
-                    // revoke a permission by replacing GRANT with REVOKE in the name
-                    command.CommandText = "REVOKE " + objectName;
-                    break;
-
-                case SchemaObjectType.Trigger:
-                    command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP TRIGGER {0}", objectName);
-                    break;
-
-                case SchemaObjectType.User:
-                case SchemaObjectType.Login:
-                case SchemaObjectType.Schema:
-                case SchemaObjectType.Role:
-					command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP {0}", objectName);
-                    break;
-
-				case SchemaObjectType.PartitionScheme:
-					command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP PARTITION SCHEME {0}", objectName);
-					break;
-
-				case SchemaObjectType.PartitionFunction:
-					command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP PARTITION FUNCTION {0}", objectName);
-					break;
-
-				case SchemaObjectType.Queue:
-					command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP QUEUE {0}", SqlParser.UnformatSqlName (objectName).Split (new char[] {' '}, 2) [1]);
-					break;
-
-				case SchemaObjectType.Service:
-					command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP SERVICE {0}", SqlParser.UnformatSqlName (objectName).Split (new char [] { ' ' }, 2) [1]);
-					break;
-
-				case SchemaObjectType.MessageType:
-					command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP MESSAGE TYPE {0}", objectName);
-					break;
-
-				case SchemaObjectType.Contract:
-					command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP CONTRACT {0}", objectName);
-					break;
-
-				case SchemaObjectType.BrokerPriority:
-					command.CommandText = String.Format (CultureInfo.InvariantCulture, "DROP BROKER PRIORITY {0}", objectName);
-					break;
-
-				case SchemaObjectType.AutoProc:
-					command.CommandText = new AutoProc(objectName, new SqlColumnDefinitionProvider(connection), null).DropSql;
-					break;
-			}
-
-			foreach (string sql in command.CommandText.Split(new string[] { "GO" }, StringSplitOptions.RemoveEmptyEntries))
-				connection.ExecuteSql(sql);
+			if (implementation.CanDrop())
+				implementation.Drop(connection);
 		}
         #endregion
 
