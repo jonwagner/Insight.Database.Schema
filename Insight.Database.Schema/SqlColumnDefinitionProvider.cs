@@ -33,7 +33,7 @@ namespace Insight.Database.Schema
 		/// </summary>
 		/// <param name="tableName">The name of the table.</param>
 		/// <returns>The definitions of the columns in the table.</returns>
-		public IList<ColumnDefinition> GetColumns(string tableName)
+		public IList<ColumnDefinition> GetColumns(SqlName tableName)
 		{
 			List<ColumnDefinition> columns = new List<ColumnDefinition>();
 
@@ -50,7 +50,7 @@ namespace Insight.Database.Schema
 							WHERE i.is_primary_key = 1
 					) AS pk ON (c.object_id = pk.object_id AND c.column_id = pk.column_id)
 					WHERE c.object_id = OBJECT_ID('{0}')
-				", tableName);
+				", tableName.SchemaQualifiedTable);
 
 			using (IDataReader reader = _connection.GetReaderSql(schemaSql))
 			{

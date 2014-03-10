@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace Insight.Database.Schema
 {
@@ -54,12 +55,17 @@ namespace Insight.Database.Schema
 		{
 			Original = fullName;
 
-			var split = SqlParser.SplitSqlName(fullName);
+			var split = Regex.Matches(fullName, @"(\[[^\]]+\])|([\w\d]+)").OfType<Match>().Select(m => m.Value).ToArray();
+
 			while (split.Length < expectedParts)
 			{
 				fullName = "[dbo]." + fullName;
 				split = SqlParser.SplitSqlName(fullName);
 			}
+
+			// in some special cases (autoproc, permissions), we just need the original
+			if (split.Length > expectedParts)
+				return;
 
 			if (split.Length == 1)
 			{

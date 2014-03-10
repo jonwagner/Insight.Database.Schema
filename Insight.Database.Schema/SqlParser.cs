@@ -158,7 +158,7 @@ namespace Insight.Database.Schema
 
 						default:
 							// for most types, reformat the name to a fully qualified sql name
-							name = ReformatSqlName(name);
+							//name = ReformatSqlName(name);
 							break;
 					}
 
@@ -182,9 +182,13 @@ namespace Insight.Database.Schema
 		/// <returns>The unformatted object name</returns>
 		internal static string UnformatSqlName(string name)
 		{
-			string[] splitName = name.Split(_sqlNameDivider);
-			string objectName = splitName[splitName.Length - 1];
-			return _sqlNameCharactersRegex.Replace(objectName, "");
+			if (name == null)
+				return null;
+
+			if (name.StartsWith("[") && name.EndsWith("]"))
+				return name.Substring(1, name.Length - 2);
+
+			return name;
 		}
 
 		/// <summary>
@@ -195,6 +199,9 @@ namespace Insight.Database.Schema
 		/// <returns>The unformatted object name</returns>
 		internal static string ReformatSqlName(string name)
 		{
+			if (name == null)
+				return null;
+
 			string[] splitName = name.Split(_sqlNameDivider);
 			return String.Join(_sqlNameDividerString, splitName.Select(n => FormatSqlName(UnformatSqlName(n))).ToArray());
 		}
@@ -263,7 +270,13 @@ namespace Insight.Database.Schema
 		/// <returns>The escaped name</returns>
 		internal static string FormatSqlName(string name)
 		{
-			return String.Format(CultureInfo.InvariantCulture, "[{0}]", UnformatSqlName(name));
+			if (name == null)
+				return null;
+
+			if (!name.StartsWith("[") || !name.EndsWith("]"))
+				return "[" + name + "]";
+
+			return name;
 		}
 
 		/// <summary>

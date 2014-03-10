@@ -31,14 +31,9 @@ namespace Insight.Database.Schema
 		private static string _concurrencyError = "At least one record has changed or does not exist. (CONCURRENCY CHECK)";
 
 		/// <summary>
-		/// The name of the schema that we are generating procedures for.
+		/// The name of the table to autoproc.
 		/// </summary>
-		private string _schemaName;
-
-		/// <summary>
-		/// The name of the table that we are generating procedures for.
-		/// </summary>
-		private string _tableName;
+		private SqlName _tableName;
 
 		/// <summary>
 		/// The singular form of the name of the table that we are generating procedures for.
@@ -108,23 +103,22 @@ namespace Insight.Database.Schema
 			// break up the name into its components
 			var match = new Regex(AutoProcRegexString, RegexOptions.IgnoreCase).Match(name);
 			_type = (ProcTypes)Enum.Parse(typeof(ProcTypes), match.Groups["type"].Value);
-			_tableName = SqlParser.ReformatSqlName(match.Groups["tablename"].Value);
-			_schemaName = SqlParser.SchemaNameFromTableName(_tableName);
+			_tableName = new SqlName(match.Groups["tablename"].Value, 2);
 
 			// generate the singular table name
 			if (!String.IsNullOrWhiteSpace(match.Groups["single"].Value))
-				_singularTableName = SqlParser.FormatSqlName(match.Groups["single"].Value);
+				_singularTableName = match.Groups["single"].Value;
 			else
-				_singularTableName = SqlParser.FormatSqlName(Singularizer.Singularize(SqlParser.UnformatSqlName(match.Groups["tablename"].Value)));
+				_singularTableName = Singularizer.Singularize(_tableName.Table);
 
 			// generate the plural table name
 			if (!String.IsNullOrWhiteSpace(match.Groups["plural"].Value))
-				_pluralTableName = SqlParser.FormatSqlName(match.Groups["plural"].Value);
+				_pluralTableName = match.Groups["plural"].Value;
 			else
 			{
-				_pluralTableName = SqlParser.FormatSqlName(_tableName);
+				_pluralTableName = _tableName.Table;
 				if (String.Compare(_pluralTableName, _singularTableName, StringComparison.OrdinalIgnoreCase) == 0)
-					_pluralTableName = SqlParser.FormatSqlName(SqlParser.UnformatSqlName(_tableName) + "s");
+					_pluralTableName = _tableName.Table + "s";
 			}
 
 			// get the specified name
@@ -140,8 +134,8 @@ namespace Insight.Database.Schema
 			if (objects != null)
 			{
 				Regex optionalSqlName = new Regex(@"([\[\]])");
-				string escapedWildcardedName = optionalSqlName.Replace(Regex.Escape(_tableName), @"$1?");
-				Regex regex = new Regex(String.Format(CultureInfo.InvariantCulture, @"(CREATE\s+TABLE\s+.*{0}\s*\()|(ALTER\s+TABLE\s+.*{0}.*PRIMARY\s+KEY)", escapedWildcardedName));
+				string escapedWildcardedName = optionalSqlName.Replace(Regex.Escape(_tableName.Table), @"$1?");
+				Regex regex = new Regex(String.Format(CultureInfo.InvariantCulture, @"(CREATE\s+TABLE\s+.*{0}[\]\s]\s*\()|(ALTER\s+TABLE\s+.*{0}.*PRIMARY\s+KEY)", escapedWildcardedName));
 
 				// calculate the signature based upon the TABLE definition, plus any PRIMARY KEY definition for the table
 				string sql = String.Join(" ", objects.Where(o => regex.Match(o.Sql).Success)
@@ -239,7 +233,7 @@ namespace Insight.Database.Schema
 			sb.AppendLine(Join(keys, ",", "{1} {2}"));
 			sb.AppendLine(")");
 			sb.AppendLine("AS");
-			sb.AppendFormat("SELECT * FROM {0} WHERE ", _tableName);
+			sb.AppendFormat("SELECT * FROM {0} WHERE ", _tableName.SchemaQualifiedTable);
 			sb.AppendLine();
 			sb.AppendLine(Join(keys, " AND", "{0}={1}"));
 
@@ -280,7 +274,7 @@ namespace Insight.Database.Schema
 			{
 				sb.AppendLine(GenerateOutputTable(outputs));
 			}
-			sb.AppendFormat("INSERT INTO {0}", _tableName);
+			sb.AppendFormat("INSERT INTO {0}", _tableName.SchemaQualifiedTable);
 			sb.AppendLine();
 			sb.AppendLine("(");
 			sb.AppendLine(Join(insertable, ",", "{0}"));
@@ -331,7 +325,7 @@ namespace Insight.Database.Schema
 			}
 			if (updatable.Any())
 			{
-				sb.AppendFormat("UPDATE {0} SET", _tableName);
+				sb.AppendFormat("UPDATE {0} SET", _tableName.SchemaQualifiedTable);
 				sb.AppendLine();
 				sb.AppendLine(Join(updatable, ",", "{0}={1}"));
 				if (outputs.Any())
@@ -355,7 +349,7 @@ namespace Insight.Database.Schema
 			}
 			else
 			{
-				sb.AppendFormat("RAISERROR (N'There are no UPDATEable fields on {0}', 18, 0)", _tableName);
+				sb.AppendFormat("RAISERROR (N'There are no UPDATEable fields on {0}', 18, 0)", _tableName.SchemaQualifiedTable);
 				sb.AppendLine();
 			}
 
@@ -395,7 +389,7 @@ namespace Insight.Database.Schema
 
 			if (updatable.Any())
 			{
-				sb.AppendFormat("MERGE INTO {0} AS t", _tableName);
+				sb.AppendFormat("MERGE INTO {0} AS t", _tableName.SchemaQualifiedTable);
 				sb.AppendLine();
 				sb.AppendLine("USING");
 				sb.AppendLine("(");
@@ -436,7 +430,7 @@ namespace Insight.Database.Schema
 			}
 			else
 			{
-				sb.AppendFormat("RAISERROR (N'There are no UPDATEable fields on {0}', 18, 0)", _tableName);
+				sb.AppendFormat("RAISERROR (N'There are no UPDATEable fields on {0}', 18, 0)", _tableName.SchemaQualifiedTable);
 				sb.AppendLine();
 			}
 
@@ -473,7 +467,7 @@ namespace Insight.Database.Schema
 			sb.AppendLine(Join(inputs, ",", "{1} {2}"));
 			sb.AppendLine(")");
 			sb.AppendLine("AS");
-			sb.AppendFormat("DELETE FROM {0} WHERE", _tableName);
+			sb.AppendFormat("DELETE FROM {0} WHERE", _tableName.SchemaQualifiedTable);
 			sb.AppendLine();
 			sb.AppendLine(Join(keys, " AND", "{0}={1}"));
 
@@ -540,14 +534,14 @@ namespace Insight.Database.Schema
 		{
 			IEnumerable<ColumnDefinition> keys = columns.Where(c => c.IsKey);
 
-			string parameterName = SqlParser.UnformatSqlName(_singularTableName);
+			string parameterName = _singularTableName;
 
 			// generate the sql for each proc and install them
 			StringBuilder sb = new StringBuilder();
 			sb.AppendFormat("CREATE PROCEDURE {0} (@{1} {2} READONLY)", MakeProcName("Select", plural: true), parameterName, MakeTableName("IdTable"));
 			sb.AppendLine();
 			sb.AppendLine("AS");
-			sb.AppendFormat("SELECT * FROM {0} AS t", _tableName);
+			sb.AppendFormat("SELECT * FROM {0} AS t", _tableName.SchemaQualifiedTable);
 			sb.AppendLine();
 			sb.AppendFormat("JOIN @{0} AS s ON", parameterName);
 			sb.AppendLine();
@@ -568,7 +562,7 @@ namespace Insight.Database.Schema
 			IList<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly).ToList();
 			IEnumerable<ColumnDefinition> insertable = columns.Where(c => !c.IsReadOnly);
 
-			string parameterName = SqlParser.UnformatSqlName(_singularTableName);
+			string parameterName = _singularTableName;
 
 			// generate the sql for each proc and install them
 			StringBuilder sb = new StringBuilder();
@@ -579,7 +573,7 @@ namespace Insight.Database.Schema
 			{
 				sb.AppendLine(GenerateOutputTable(outputs));
 			}
-			sb.AppendFormat("INSERT INTO {0}", _tableName);
+			sb.AppendFormat("INSERT INTO {0}", _tableName.SchemaQualifiedTable);
 			sb.AppendLine();
 			if (insertable.Any())
 			{
@@ -595,7 +589,7 @@ namespace Insight.Database.Schema
 			}
 			sb.AppendLine("SELECT");
 			sb.AppendLine(Join(insertable, ",", "{0}"));
-			sb.AppendFormat("FROM @{1}", _tableName, parameterName);
+			sb.AppendFormat("FROM @{0}", parameterName);
 			sb.AppendLine();
 			if (outputs.Any())
 			{
@@ -618,7 +612,7 @@ namespace Insight.Database.Schema
 
 			VerifyOptimisticTimestamp(optimistic, timestamp);
 
-			string parameterName = SqlParser.UnformatSqlName(_singularTableName);
+			string parameterName = _singularTableName;
 
 			// generate the sql for each proc and install them
 			StringBuilder sb = new StringBuilder();
@@ -636,7 +630,7 @@ namespace Insight.Database.Schema
 				sb.AppendLine(String.Format(CultureInfo.InvariantCulture, "SELECT @expected = COUNT(*) FROM @{0}", parameterName));
 			}
 
-			sb.AppendFormat("MERGE INTO {0} AS t", _tableName);
+			sb.AppendFormat("MERGE INTO {0} AS t", _tableName.SchemaQualifiedTable);
 			sb.AppendLine();
 			sb.AppendFormat("USING @{0} AS s", parameterName);
 			sb.AppendLine();
@@ -684,7 +678,7 @@ namespace Insight.Database.Schema
 
 			VerifyOptimisticTimestamp(optimistic, timestamp);
 
-			string parameterName = SqlParser.UnformatSqlName(_singularTableName);
+			string parameterName = _singularTableName;
 
 			// generate the sql for each proc and install them
 			StringBuilder sb = new StringBuilder();
@@ -702,7 +696,7 @@ namespace Insight.Database.Schema
 				sb.AppendLine(String.Format(CultureInfo.InvariantCulture, "SELECT @expected = COUNT(*) FROM @{0}", parameterName));
 			}
 
-			sb.AppendFormat("MERGE INTO {0} AS t", _tableName);
+			sb.AppendFormat("MERGE INTO {0} AS t", _tableName.SchemaQualifiedTable);
 			sb.AppendLine();
 			sb.AppendFormat("USING @{0} AS s", parameterName);
 			sb.AppendLine();
@@ -761,7 +755,7 @@ namespace Insight.Database.Schema
 
 			VerifyOptimisticTimestamp(optimistic, timestamp);
 
-			string parameterName = SqlParser.UnformatSqlName(_singularTableName);
+			string parameterName = _singularTableName;
 
 			// generate the sql for each proc and install them
 			StringBuilder sb = new StringBuilder();
@@ -776,9 +770,9 @@ namespace Insight.Database.Schema
 				sb.AppendLine(String.Format(CultureInfo.InvariantCulture, "SELECT @expected = COUNT(*) FROM @{0}", parameterName));
 			}
 
-			sb.AppendFormat("DELETE FROM {0}", _tableName);
+			sb.AppendFormat("DELETE FROM {0}", _tableName.SchemaQualifiedTable);
 			sb.AppendLine();
-			sb.AppendFormat("\tFROM {0} AS t", _tableName);
+			sb.AppendFormat("\tFROM {0} AS t", _tableName.SchemaQualifiedTable);
 			sb.AppendLine();
 			sb.AppendFormat("JOIN @{0} AS s ON", parameterName);
 			sb.AppendLine();
@@ -806,7 +800,7 @@ namespace Insight.Database.Schema
 		/// <returns>The stored procedure SQL.</returns>
 		private string GenerateFindSql(IList<ColumnDefinition> columns)
 		{
-			string parameterName = SqlParser.UnformatSqlName(_singularTableName);
+			string parameterName = _singularTableName;
 
 			// generate the sql for each proc and install them
 			StringBuilder sb = new StringBuilder();
@@ -826,7 +820,7 @@ namespace Insight.Database.Schema
 			sb.AppendLine("AS");
 			sb.AppendLine("DECLARE @sql [nvarchar](MAX) = 'SELECT '");
 			sb.AppendLine("\tIF @Top IS NOT NULL AND @Skip IS NULL SET @sql = @sql + 'TOP (@Top) '");
-			sb.AppendFormat("SET @sql = @sql + ' * FROM {0} WHERE 1=1'", _tableName);
+			sb.AppendFormat("SET @sql = @sql + ' * FROM {0} WHERE 1=1'", _tableName.SchemaQualifiedTable);
 			sb.AppendLine();
 
 			// handle where clauses
@@ -872,11 +866,11 @@ namespace Insight.Database.Schema
 		private string MakeProcName(string type, bool plural)
 		{
 			// use the user-specified name or make one from the type
-			return SqlParser.ReformatSqlName(String.Format(CultureInfo.InvariantCulture, Name ?? (plural ? "{3}{0}{1}" : "{3}{0}{2}"),
+			return SqlParser.FormatSqlName(_tableName.Schema,
+					String.Format(Name ?? (plural ? "{0}{1}" : "{0}{2}"),
 				type,
 				_pluralTableName,
-				_singularTableName,
-				_schemaName));
+				_singularTableName));
 		}
 
 		/// <summary>
@@ -887,11 +881,10 @@ namespace Insight.Database.Schema
 		private string MakeTableName(string type)
 		{
 			// use the user-specified name or make one from the type
-			return SqlParser.ReformatSqlName(String.Format(CultureInfo.InvariantCulture, Name ?? "{3}{2}{0}",
+			return SqlParser.FormatSqlName(_tableName.Schema,
+				String.Format(Name ?? "{1}{0}",
 				type,
-				_tableName,
-				_singularTableName,
-				_schemaName));
+				_tableName.Table));
 		}
 
 		/// <summary>
@@ -912,7 +905,10 @@ namespace Insight.Database.Schema
 		/// <returns>The Drop statement.</returns>
 		private string MakeTableDropStatment(string tableName)
 		{
-			return String.Format(CultureInfo.InvariantCulture, "IF EXISTS (SELECT * FROM sys.types st JOIN sys.schemas ss ON st.schema_id = ss.schema_id WHERE st.name = N'{1}') DROP TYPE {0}", MakeTableName(tableName), SqlParser.UnformatSqlName(MakeTableName(tableName)));
+			var sqlName = new SqlName(MakeTableName(tableName), 2);
+			return String.Format(CultureInfo.InvariantCulture, @"
+				IF EXISTS (SELECT * FROM sys.types st JOIN sys.schemas ss ON st.schema_id = ss.schema_id WHERE ss.name = N'{1}' AND st.name = N'{2}')
+					DROP TYPE {0}", sqlName.SchemaQualifiedObject, sqlName.Schema, sqlName.Object);
 		}
 		#endregion
 

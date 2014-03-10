@@ -16,6 +16,6 @@ namespace Insight.Database.Schema
 		/// </summary>
 		/// <param name="tableName">The name of the table.</param>
 		/// <returns>A list of the columns for the table.</returns>
-		IList<ColumnDefinition> GetColumns(string tableName);
+		IList<ColumnDefinition> GetColumns(SqlName tableName);
 	}
 }

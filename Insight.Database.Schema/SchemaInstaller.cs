@@ -779,6 +779,10 @@ namespace Insight.Database.Schema
 		/// <param name="schemaObject">The schemaObject to script.</param>
 		private void ScriptStandardDependencies(InstallContext context, SchemaObject schemaObject)
 		{
+			// can only script dependencies for objects with names
+			if (schemaObject.SqlName.FullName == null)
+				return;
+
 			// find all of the dependencies on the object
 			// this will find things that use views or tables
 			// note that there will be more than one dependency if more than one column is referenced
