@@ -22,6 +22,16 @@ namespace Insight.Database.Schema.Implementation
 				Name.Object));
 		}
 
+		public override bool CanDrop(SchemaInstaller.InstallContext context, IDbConnection connection)
+		{
+			return 0 == connection.ExecuteScalarSql<int>(String.Format(@"
+				SELECT COUNT(*)
+				FROM sys.service_contract_message_usages c
+				JOIN sys.service_message_types m ON (c.message_type_id = m.message_type_id)
+				WHERE m.name = '{0}'",
+				Name.Object));
+		}
+
 		public override void Drop(IDbConnection connection)
 		{
 			connection.ExecuteSql(String.Format(@"DROP MESSAGE TYPE {0}", Name.ObjectFormatted));

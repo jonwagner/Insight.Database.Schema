@@ -87,7 +87,7 @@ namespace Insight.Database.Schema.Implementation
 
 		public override void Drop(IDbConnection connection)
 		{
-			connection.ExecuteSql(String.Format(@"REVOKE {0}", Name.ObjectFormatted));
+			connection.ExecuteSql(String.Format(@"REVOKE {0}", Name.Original));
 		}
 	}
 }

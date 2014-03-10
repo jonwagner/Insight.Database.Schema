@@ -70,11 +70,11 @@ CREATE TABLE [dbo].[Table](
 )
 GO
 
--- AUTOPROC All [Table]
--- TODO: autoproc on dbo, schema and on duplicate names
+-- AUTOPROC All [dbo].[Table]
 GO
 
--- TODO: permissions on tables
+GRANT SELECT ON [dbo].[Table] TO [MyRole]
+GO
 
 CREATE TABLE [dbo].[Table2](
     [ID] [int] IDENTITY(1,1) NOT NULL,
@@ -106,6 +106,9 @@ GO
 ALTER TABLE [dbo].[Table] ADD CONSTRAINT [PK_Table] PRIMARY KEY CLUSTERED ([ID])
 GO
 
+ALTER TABLE [dbo].[Table2] ADD CONSTRAINT [PK_Table2] PRIMARY KEY CLUSTERED ([ID])
+GO
+
 ALTER TABLE [dbo].[Table2] ADD CONSTRAINT [FK_Table] FOREIGN KEY ([ID1]) REFERENCES [dbo].[Table] (ID)
 GO
 
@@ -126,7 +129,8 @@ CREATE PROC [dbo].[Proc] AS
 	SELECT * FROM [dbo].[Table]
 GO
 
--- TODO: permissions on procs
+GRANT EXEC ON [dbo].[Proc] TO [MyRole]
+GO
 
 CREATE FUNCTION [dbo].[Func] () RETURNS INT AS
 BEGIN
@@ -150,10 +154,15 @@ CREATE TABLE [foo].[Table](
 )
 GO
 
+-- AUTOPROC All [foo].[Table]
+GO
+
+GRANT SELECT ON [foo].[Table] TO [MyRole]
+GO
+
 CREATE TABLE [foo].[Table2](
     [ID] [int] IDENTITY(1,1) NOT NULL,
-	[ID1] [int],
-	[Data] [varchar](100)
+	[ID1] [int]
 )
 GO
 
@@ -161,44 +170,56 @@ CREATE VIEW [foo].[View]  AS
 	SELECT * FROM [foo].[Table]
 GO
 
--- TODO: indexed view with the same name
 -- INDEXEDVIEW
-CREATE VIEW [foo].[IndexedView2] WITH SCHEMABINDING AS
+CREATE VIEW [foo].[IndexedView] WITH SCHEMABINDING AS
 	SELECT ID, Data FROM [foo].[Table]
---GO
-
--- TODO: index on indexed view with the same name
---CREATE UNIQUE CLUSTERED INDEX [IX_IndexedView2] ON [foo].[IndexedView2] (ID)
 GO
 
-ALTER TABLE [foo].[Table] ADD  CONSTRAINT [DF_Data] DEFAULT ((0)) FOR [Data]
+CREATE TRIGGER [foo].[TRG_Table] ON [foo].[Table]
+	FOR INSERT 
+AS
+	PRINT 'Inserted'
+GO
+
+CREATE UNIQUE CLUSTERED INDEX [IX_IndexedView] ON [foo].[IndexedView] (ID)
+GO
+
+ALTER TABLE [foo].[Table] ADD CONSTRAINT [DF_Data] DEFAULT ((0)) FOR [Data]
 GO
 
 ALTER TABLE [foo].[Table] ADD CONSTRAINT [PK_Table] PRIMARY KEY CLUSTERED ([ID])
---GO
+GO
 
--- TODO: foreign keys on tables with the same name
---ALTER TABLE [foo].[Table2] ADD CONSTRAINT [FK_Table2] FOREIGN KEY ([ID1]) REFERENCES [foo].[Table] (ID)
+ALTER TABLE [foo].[Table2] ADD CONSTRAINT [PK_Table2] PRIMARY KEY CLUSTERED ([ID])
+GO
+
+ALTER TABLE [foo].[Table2] ADD CONSTRAINT [FK_Table] FOREIGN KEY ([ID1]) REFERENCES [foo].[Table] (ID)
 GO
 
 ALTER TABLE [foo].[Table] ADD CONSTRAINT [CT_Table] CHECK (Data > 'b')
 GO
 
-
--- TODO: indexes with the same name
-CREATE INDEX [IX_Table2] ON [foo].[Table] (Data)
+CREATE INDEX IX_Table ON [foo].[Table] (Data)
 GO
 
--- TODO: primary xml index with same name
--- TODO: secondary xml index with same name
+CREATE PRIMARY XML INDEX IX_Xml ON [foo].[Table] ([Xml])
+GO
+
+CREATE XML INDEX IX_Xml2 ON [foo].[Table] ([Xml])
+	USING XML INDEX IX_Xml FOR PATH;
+GO
+
 CREATE PROC [foo].[Proc] AS
 	SELECT * FROM [foo].[Table]
+GO
+
+GRANT EXEC ON [foo].[Proc] TO [MyRole]
 GO
 
 CREATE FUNCTION [foo].[Func] () RETURNS INT AS
 BEGIN
 	DECLARE @c [int]
-	SELECT @c=COUNT(*) FROM [dbo].[Table]
+	SELECT @c=COUNT(*) FROM [foo].[Table]
 	RETURN @c
 END
 GO

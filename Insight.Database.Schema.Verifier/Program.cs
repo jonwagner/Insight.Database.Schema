@@ -120,31 +120,12 @@ namespace Insight.Database.Schema.Verifier
 						if (TypeFilter.HasValue && schema[i].SchemaObjectType != TypeFilter.Value)
 							continue;
 
-						switch (schema[i].SchemaObjectType)
+						// if the type can't be modified, then don't test it
+						if (!schema[i].CanModify(connection))
 						{
-							// Don't modify these. These have nothing to do with the installer.
-							case SchemaObjectType.UserPreScript:
-							case SchemaObjectType.Script:
-								continue;
-
-							// These can't be modified if they are part of a table. It requires the table to be regenerated.
-							case SchemaObjectType.UserDefinedType:
-								continue;
-
-							// TODO: don't test modifying these yet. I know the dependencies don't work.
-							case SchemaObjectType.PartitionFunction:
-							case SchemaObjectType.PartitionScheme:
-							case SchemaObjectType.MessageType:
-							case SchemaObjectType.MasterKey:
-							case SchemaObjectType.Queue:
-							case SchemaObjectType.Service:
-							case SchemaObjectType.SymmetricKey:
-							case SchemaObjectType.Certificate:
-							case SchemaObjectType.BrokerPriority:
-							case SchemaObjectType.Contract:
-							case SchemaObjectType.Login:
-							case SchemaObjectType.Schema:
-								continue;
+							Console.WriteLine();
+							Console.WriteLine("Not testing modification of {0} {1}", schema[i].SchemaObjectType, schema[i].SqlName.FullName);
+							continue;
 						}
 
 						// make sure all of the objects are there

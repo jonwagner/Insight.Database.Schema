@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Globalization;
 using System.Linq;
 using System.Text;
@@ -22,7 +23,7 @@ namespace Insight.Database.Schema.Implementation
 	 				Name.Object));
 		}
 
-		public override bool CanDrop()
+		public override bool CanDrop(SchemaInstaller.InstallContext context, IDbConnection connection)
 		{
 			return false;
 		}

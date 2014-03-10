@@ -451,7 +451,7 @@ namespace Insight.Database.Schema
 		/// <param name="schemaObject">The object to update.</param>
 		private void ScriptTableUpdate(InstallContext context, SchemaObject schemaObject)
 		{
-			string oldTableName = schemaObject.Name;
+			string oldTableName = schemaObject.SqlName.FullName;
 			string newTableName = InsightTemp + DateTime.Now.Ticks.ToString(CultureInfo.InvariantCulture);
 
 			try
@@ -629,7 +629,8 @@ namespace Insight.Database.Schema
 		/// <returns>The list of columns on the table.</returns>
 		private IEnumerable<FastExpando> GetColumnsForTable(string tableName)
 		{
-			return _connection.QuerySql(String.Format(CultureInfo.InvariantCulture, @"SELECT Name=c.name, ColumnID=c.column_id, TypeName = t.name, MaxLength=c.max_length, Precision=c.precision, Scale=c.scale, IsNullable=c.is_nullable, IsIdentity=c.is_identity, IdentitySeed=i.seed_value, IdentityIncrement=i.increment_value, Definition=cc.definition,
+			return _connection.QuerySql(String.Format(CultureInfo.InvariantCulture, @"
+				SELECT Name=c.name, ColumnID=c.column_id, TypeName = t.name, MaxLength=c.max_length, Precision=c.precision, Scale=c.scale, IsNullable=c.is_nullable, IsIdentity=c.is_identity, IdentitySeed=i.seed_value, IdentityIncrement=i.increment_value, Definition=cc.definition,
 				DefaultName=REPLACE(d.name, '{0}', ''), DefaultIsSystemNamed=d.is_system_named, DefaultDefinition=d.definition
 					FROM sys.columns c
 					JOIN sys.types t ON (c.system_type_id = t.system_type_id AND c.user_type_id = t.user_type_id)
@@ -732,7 +733,7 @@ namespace Insight.Database.Schema
 								LEFT JOIN sys.objects o ON (p.class_desc = 'OBJECT_OR_COLUMN' AND p.major_id = o.object_id)
 								LEFT JOIN sys.types t ON (p.class_desc = 'TYPE' AND p.major_id = t.user_type_id)
 								WHERE u.name = @ObjectName",
-						new Dictionary<string, object>() { { "ObjectName", SqlParser.UnformatSqlName(SqlParser.IndexNameFromFullName(schemaObject.Name.Split(' ')[1])) } });
+						new Dictionary<string, object>() { { "ObjectName", schemaObject.SqlName.Object } });
 			}
 			else if (schemaObject.SchemaObjectType == SchemaObjectType.AutoProc)
 			{
@@ -744,16 +745,26 @@ namespace Insight.Database.Schema
 
 				return;
 			}
+			else if (schemaObject.SchemaObjectType == SchemaObjectType.UserDefinedType)
+			{
+				// get the current permissions on the object
+				permissions = _connection.QuerySql(@"SELECT UserName=u.name, Permission=p.permission_name, ClassType=p.class_desc, ObjectName=QUOTENAME(t.name)
+								FROM sys.database_principals u
+								JOIN sys.database_permissions p ON (u.principal_id = p.grantee_principal_id)
+								JOIN sys.types t ON (p.class_desc = 'TYPE' AND p.major_id = t.user_type_id)
+								WHERE t.name = @ObjectName",
+						new Dictionary<string, object>() { { "ObjectName", schemaObject.SqlName.Object } });
+			}
 			else
 			{
 				// get the current permissions on the object
-				permissions = _connection.QuerySql(@"SELECT UserName=u.name, Permission=p.permission_name, ClassType=p.class_desc, ObjectName=ISNULL(o.name, t.name)
+				permissions = _connection.QuerySql(@"SELECT UserName=u.name, Permission=p.permission_name, ClassType=p.class_desc, 
+								ObjectName=QUOTENAME(OBJECT_SCHEMA_NAME(o.object_id)) + '.' + QUOTENAME(OBJECT_NAME(o.object_id))
 								FROM sys.database_principals u
 								JOIN sys.database_permissions p ON (u.principal_id = p.grantee_principal_id)
-								LEFT JOIN sys.objects o ON (p.class_desc = 'OBJECT_OR_COLUMN' AND p.major_id = o.object_id)
-								LEFT JOIN sys.types t ON (p.class_desc = 'TYPE' AND p.major_id = t.user_type_id)
-								WHERE ISNULL (o.name, t.name) = @ObjectName",
-						new Dictionary<string, object>() { { "ObjectName", SqlParser.UnformatSqlName(schemaObject.Name) } });
+								JOIN sys.objects o ON (p.class_desc = 'OBJECT_OR_COLUMN' AND p.major_id = o.object_id)
+								WHERE o.object_id = OBJECT_ID(@ObjectName)",
+						new Dictionary<string, object>() { { "ObjectName", schemaObject.SqlName.FullName } });
 			}
 
 			// create a new permission schema object to install for each existing permission
@@ -773,7 +784,10 @@ namespace Insight.Database.Schema
 			// note that there will be more than one dependency if more than one column is referenced
 			// ignore USER_TABLE, since that is calculated columns
 			// for CHECK_CONSTRAINTS, ignore system-named constraints, since they are part of the table and will be handled there
-			var dependencies = _connection.QuerySql(@"SELECT DISTINCT Name = o.name, SqlType = o.type_desc, IsSchemaBound=d.is_schema_bound_reference
+			var dependencies = _connection.QuerySql(@"
+				SELECT DISTINCT
+					Name = QUOTENAME(OBJECT_SCHEMA_NAME(o.object_id)) + '.' + QUOTENAME(OBJECT_NAME(o.object_id)),
+					SqlType = o.type_desc, IsSchemaBound=d.is_schema_bound_reference
 				FROM sys.sql_expression_dependencies d
 				JOIN sys.objects o ON (d.referencing_id = o.object_id)
 				LEFT JOIN sys.check_constraints c ON (o.object_id = c.object_id)
@@ -784,7 +798,7 @@ namespace Insight.Database.Schema
 						CASE WHEN d.referenced_class_desc = 'TYPE' THEN (SELECT user_type_id FROM sys.types t WHERE t.name = @ObjectName)
 						ELSE OBJECT_ID(@ObjectName)
 					END)",
-				new Dictionary<string, object>() { { "ObjectName", SqlParser.UnformatSqlName(schemaObject.Name) } });
+				new Dictionary<string, object>() { { "ObjectName", schemaObject.SqlName.FullName } });
 
 			foreach (dynamic dependency in dependencies)
 			{
@@ -810,7 +824,9 @@ namespace Insight.Database.Schema
 
 					case "CHECK_CONSTRAINT":
 						// need to do a little work to re-create the check constraint
-						dynamic checkConstraint = _connection.QuerySql(@"SELECT TableName=o.name, ConstraintName=c.name, Definition=c.definition
+						dynamic checkConstraint = _connection.QuerySql(@"
+							SELECT TableName=QUOTENAME(OBJECT_SCHEMA_NAME(o.object_id)) + '.' + QUOTENAME(OBJECT_NAME(o.object_id)),
+							ConstraintName=c.name, Definition=c.definition
 							FROM sys.check_constraints c
 							JOIN sys.objects o ON (c.parent_object_id = o.object_id) WHERE c.object_id = OBJECT_ID(@Name)",
 							new Dictionary<string, object>() { { "Name", dependencyName } }).First();
@@ -842,24 +858,29 @@ namespace Insight.Database.Schema
 
 			if (schemaObject.SchemaObjectType == SchemaObjectType.PrimaryKey)
 			{
-				foreignKeys = _connection.QuerySql(@"SELECT Name=f.name, TableName=o.name, RefTableName=ro.name, DeleteAction=delete_referential_action_desc, UpdateAction=update_referential_action_desc
+				foreignKeys = _connection.QuerySql(@"
+					SELECT ObjectID=f.object_id, Name=f.name, 
+					TableName=QUOTENAME(OBJECT_SCHEMA_NAME(o.object_id)) + '.' + QUOTENAME(OBJECT_NAME(o.object_id)),
+					RefTableName=QUOTENAME(OBJECT_SCHEMA_NAME(ro.object_id)) + '.' + QUOTENAME(OBJECT_NAME(ro.object_id)),
+					DeleteAction=delete_referential_action_desc, UpdateAction=update_referential_action_desc
 					FROM sys.foreign_keys f
 					JOIN sys.key_constraints k ON (f.referenced_object_id = k.parent_object_id)
 					JOIN sys.objects o ON (f.parent_object_id = o.object_id)
 					JOIN sys.objects ro ON (k.parent_object_id = ro.object_id)
-					WHERE k.name = @ObjectName",
-				new Dictionary<string, object>() { { "ObjectName", SqlParser.IndexNameFromFullName(schemaObject.Name) } });
+					WHERE k.parent_object_id = OBJECT_ID(@ObjectID)",
+				new Dictionary<string, object>() { { "ObjectID", schemaObject.SqlName.FullName } });
 			}
 
 			foreach (dynamic foreignKey in foreignKeys)
 			{
 				// get the columns in the key from the database
-				var columns = _connection.QuerySql(@"SELECT FkColumnName=fc.name, PkColumnName=kc.name
+				var columns = _connection.QuerySql(@"
+						SELECT FkColumnName=fc.name, PkColumnName=kc.name
 						FROM sys.foreign_key_columns f
 						JOIN sys.columns fc ON (f.parent_object_id = fc.object_id AND f.parent_column_id = fc.column_id)
 						JOIN sys.columns kc ON (f.referenced_object_id = kc.object_id AND f.referenced_column_id = kc.column_id)
-						WHERE f.constraint_object_id = OBJECT_ID(@KeyName)",
-					new Dictionary<string, object>() { { "KeyName", foreignKey.Name } });
+						WHERE f.constraint_object_id = @KeyID",
+					new Dictionary<string, object>() { { "KeyID", foreignKey.ObjectID } });
 
 				StringBuilder sb = new StringBuilder();
 				sb.AppendFormat("ALTER TABLE {0} ADD CONSTRAINT {1} FOREIGN KEY (",
@@ -890,7 +911,10 @@ namespace Insight.Database.Schema
 			// NOTE: order by type: do the clustered indexes first because they also drop nonclustered indexes if the object is a view (not a table)
 
 			// generate some sql to determine the proper index
-			string sql = "SELECT Name=i.name, TableName=o.name, Type=i.type_desc, IsUnique=i.is_unique, IsConstraint=CONVERT(bit, CASE WHEN k.object_id IS NOT NULL THEN 1 ELSE 0 END), IsPrimaryKey=CONVERT(bit, CASE WHEN k.type_desc = 'PRIMARY_KEY_CONSTRAINT' THEN 1 ELSE 0 END), DataSpace=";
+			string sql = @"SELECT ObjectID=i.object_id, IndexID=i.index_id,
+				Name=QUOTENAME(i.name), 
+				TableName=QUOTENAME(OBJECT_SCHEMA_NAME(o.object_id)) + '.' + QUOTENAME(OBJECT_NAME(o.object_id)), 
+				Type=i.type_desc, IsUnique=i.is_unique, IsConstraint=CONVERT(bit, CASE WHEN k.object_id IS NOT NULL THEN 1 ELSE 0 END), IsPrimaryKey=CONVERT(bit, CASE WHEN k.type_desc = 'PRIMARY_KEY_CONSTRAINT' THEN 1 ELSE 0 END), DataSpace=";
 			sql += context.IsAzure ? "NULL" : "ISNULL(f.name, p.name)";
 
 			// get the data for the dependent indexes
@@ -918,7 +942,7 @@ namespace Insight.Database.Schema
 			// add the where clause
 			if (schemaObject.SchemaObjectType == SchemaObjectType.Index)
 			{
-				sql += @" WHERE currentindex.name = @ObjectName AND currentIndex.type_desc = 'CLUSTERED' AND i.name IS NOT NULL";
+				sql += @" WHERE currentindex.object_id = OBJECT_ID(@ObjectName) AND currentIndex.type_desc = 'CLUSTERED' AND i.name IS NOT NULL";
 			}
 			else
 			{
@@ -928,7 +952,7 @@ namespace Insight.Database.Schema
 			// filter by column if appropriate
 			if (columnName != null)
 			{
-				sql += @" AND i.index_Id IN (SELECT index_id 
+				sql += @" AND i.index_id IN (SELECT index_id 
 								FROM sys.index_columns ic
 								JOIN sys.columns c ON (c.object_id = ic.object_id AND c.column_id = ic.column_id)
 								WHERE ic.object_id = OBJECT_ID(@ObjectName) AND c.name = @ColumnName)";
@@ -936,16 +960,27 @@ namespace Insight.Database.Schema
 			sql += @" ORDER BY Type";
 
 			// find the indexes on the table
-			var indexes = _connection.QuerySql(sql, new Dictionary<string, object>() { { "ObjectName", SqlParser.UnformatSqlName(schemaObject.Name) }, { "ColumnName", columnName } });
+			var indexes = _connection.QuerySql(
+				sql,
+				new Dictionary<string, object>()
+				{
+					{ "ObjectName", schemaObject.SqlName.FullName }, 
+					{ "ColumnName", columnName } 
+				});
 			foreach (dynamic index in indexes)
 			{
 				// get the columns in the key from the database
-				var columns = _connection.QuerySql(@"SELECT ColumnName=c.name
+				var columns = _connection.QuerySql(@"
+					SELECT ColumnName=c.name
 					FROM sys.indexes i
 					JOIN sys.index_columns ic ON (i.object_id = ic.object_id AND i.index_id = ic.index_id)
 					JOIN sys.columns c ON (ic.object_id = c.object_id AND ic.column_id = c.column_id)
-					WHERE i.name = @IndexName",
-					new Dictionary<string, object>() { { "IndexName", index.Name } });
+					WHERE i.object_id = @ObjectID AND i.index_id = @IndexID",
+					new Dictionary<string, object>()
+					{
+						{ "ObjectID", index.ObjectID },
+						{ "IndexID", index.IndexID },
+					});
 
 				StringBuilder sb = new StringBuilder();
 				if (index.IsConstraint)
@@ -953,16 +988,16 @@ namespace Insight.Database.Schema
 					sb.AppendFormat("ALTER TABLE {3} ADD CONSTRAINT {2} {0}{1} (",
 						index.IsPrimaryKey ? "PRIMARY KEY " : index.IsUnique ? "UNIQUE " : "",
 						index.Type,
-						SqlParser.FormatSqlName(SqlParser.IndexNameFromFullName(index.Name)),
-						SqlParser.FormatSqlName(index.TableName));
+						index.Name,
+						index.TableName);
 				}
 				else
 				{
 					sb.AppendFormat("CREATE {0}{1} INDEX {2} ON {3} (",
 						index.IsUnique ? "UNIQUE " : "",
 						index.Type,
-						SqlParser.FormatSqlName(SqlParser.IndexNameFromFullName(index.Name)),
-						SqlParser.FormatSqlName(index.TableName));
+						index.Name,
+						index.TableName);
 				}
 				sb.Append(String.Join(",", columns.Select((dynamic c) => SqlParser.FormatSqlName(c.ColumnName))));
 				sb.Append(")");
@@ -975,14 +1010,18 @@ namespace Insight.Database.Schema
 					// get the partition columns (this will be empty for non-partitioned indexes)
 					if (!context.IsAzure)
 					{
-						var partitionColumns = _connection.QuerySql(@"SELECT ColumnName=c.name
+						var partitionColumns = _connection.QuerySql(@"
+								SELECT ColumnName=c.name
 								FROM sys.index_columns ic
 								JOIN sys.columns c ON (ic.object_id = c.object_id AND ic.column_id = c.column_id)
 								JOIN sys.indexes i ON (i.object_id = ic.object_id AND i.index_id = ic.index_id)
-								JOIN sys.objects o ON (i.object_id = o.object_id)
-								WHERE o.name = @TableName AND i.name = @IndexName AND ic.partition_ordinal <> 0
+								WHERE i.object_id = @ObjectID AND i.index_id = @IndexID AND ic.partition_ordinal <> 0
 								ORDER BY ic.partition_ordinal",
-							new Dictionary<string, object>() { { "TableName", SqlParser.UnformatSqlName(index.TableName) }, { "IndexName", SqlParser.UnformatSqlName(index.Name) } });
+							new Dictionary<string, object>()
+							{ 
+								{ "ObjectID", index.ObjectID },
+								{ "IndexID", index.IndexID }
+							});
 
 						if (partitionColumns.Any())
 						{
@@ -1014,7 +1053,10 @@ namespace Insight.Database.Schema
 				// find any secondary indexes dependent upon the primary index
 				xmlIndexes = _connection.QuerySql(@"
 						IF NOT EXISTS (SELECT * FROM sys.system_objects WHERE name = 'xml_indexes') SELECT TOP 0 Nothing=NULL ELSE
-						SELECT Name=i.name, TableName=o.name, SecondaryType=i.secondary_type_desc, ParentIndexName=@ObjectName
+						SELECT ObjectID=i.object_id, IndexID=i.index_id, 
+						Name=QUOTENAME(i.name), 
+						TableName=QUOTENAME(OBJECT_SCHEMA_NAME(o.object_id)) + '.' + QUOTENAME(OBJECT_NAME(o.object_id)),
+						SecondaryType=i.secondary_type_desc, ParentIndexName=QUOTENAME(@ObjectName)
 						FROM sys.xml_indexes i
 						JOIN sys.objects o ON (i.object_id = o.object_id)
 						JOIN sys.xml_indexes p ON (p.index_id = i.using_xml_index_id)
@@ -1026,29 +1068,37 @@ namespace Insight.Database.Schema
 				// for tables and primary keys, look for primary xml indexes
 				xmlIndexes = _connection.QuerySql(@"
 						IF NOT EXISTS (SELECT * FROM sys.system_objects WHERE name = 'xml_indexes') SELECT TOP 0 Nothing=NULL ELSE
-						SELECT Name=i.name, TableName=o.name, SecondaryType=i.secondary_type_desc, ParentIndexName=u.name
+						SELECT ObjectID=i.object_id, IndexID=i.index_id,
+						Name=QUOTENAME(i.name),
+						TableName=QUOTENAME(OBJECT_SCHEMA_NAME(o.object_id)) + '.' + QUOTENAME(OBJECT_NAME(o.object_id)),
+						SecondaryType=i.secondary_type_desc, ParentIndexName=u.name
 						FROM sys.xml_indexes i
 						JOIN sys.objects o ON (i.object_id = o.object_id)
 						LEFT JOIN sys.xml_indexes u ON (i.using_xml_index_id = u.index_id)
 						WHERE i.object_id = OBJECT_ID(@ObjectName)",
-					new Dictionary<string, object>() { { "ObjectName", SqlParser.TableNameFromIndexName(schemaObject.Name) } });
+					new Dictionary<string, object>() { { "ObjectName", schemaObject.SqlName.FullName } });
 			}
 
 			foreach (dynamic xmlIndex in xmlIndexes)
 			{
 				// get the columns in the key from the database
-				var columns = _connection.QuerySql(@"SELECT ColumnName=c.name
+				var columns = _connection.QuerySql(@"
+					SELECT ColumnName=QUOTENAME(c.name)
 					FROM sys.xml_indexes i
 					JOIN sys.index_columns ic ON (i.object_id = ic.object_id AND i.index_id = ic.index_id)
 					JOIN sys.columns c ON (ic.object_id = c.object_id AND ic.column_id = c.column_id)
-					WHERE i.name = @IndexName",
-					new Dictionary<string, object>() { { "IndexName", xmlIndex.Name } });
+					WHERE i.object_id = @ObjectID AND i.index_id = @IndexID",
+					new Dictionary<string, object>()
+					{ 
+						{ "ObjectID", xmlIndex.ObjectID },
+						{ "IndexID", xmlIndex.IndexID }
+					});
 
 				StringBuilder sb = new StringBuilder();
 				sb.AppendFormat("CREATE {0}XML INDEX {1} ON {2} (",
 					(xmlIndex.ParentIndexName == null) ? "PRIMARY " : "",
-					SqlParser.FormatSqlName(SqlParser.IndexNameFromFullName(xmlIndex.Name)),
-					SqlParser.FormatSqlName(xmlIndex.TableName));
+					xmlIndex.Name,
+					xmlIndex.TableName);
 				sb.Append(String.Join(",", columns.Select((dynamic c) => SqlParser.FormatSqlName(c.ColumnName))));
 				sb.Append(")");
 				if (xmlIndex.SecondaryType != null)

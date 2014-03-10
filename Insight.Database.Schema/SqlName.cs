@@ -5,7 +5,7 @@ using System.Text;
 
 namespace Insight.Database.Schema
 {
-	class SqlName
+	public class SqlName
 	{
 		public string Original { get; private set; }
 		public string Schema { get; private set; }

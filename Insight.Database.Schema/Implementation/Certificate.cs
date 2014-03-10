@@ -22,7 +22,7 @@ namespace Insight.Database.Schema.Implementation
 				Name.Object));
 		}
 
-		public override bool CanDrop()
+		public override bool CanDrop(SchemaInstaller.InstallContext context, IDbConnection connection)
 		{
 			return false;
 		}

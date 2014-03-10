@@ -25,7 +25,7 @@ namespace Insight.Database.Schema.Implementation
 				Name.Object));
 		}
 
-		public override bool CanModify(SchemaInstaller.InstallContext context, IDbConnection connection)
+		public override bool CanDrop(SchemaInstaller.InstallContext context, IDbConnection connection)
 		{
 			// azure can't drop the clustered index, so we have to warn if we are attempting to modify that
 			if (context.IsAzure)
@@ -34,7 +34,10 @@ namespace Insight.Database.Schema.Implementation
 					return false;
 			}
 
-			return true;
+			return 0 == connection.ExecuteScalarSql<int>(String.Format(@"SELECT COUNT(*)
+						FROM sys.xml_indexes i
+						WHERE i.object_id = OBJECT_ID('{0}')",
+				Name.SchemaQualifiedTable));
 		}
 
 		public override void Drop(IDbConnection connection)

@@ -79,6 +79,11 @@ namespace Insight.Database.Schema
         public string Name { get { return _name; } }
         private string _name;
 
+		/// <summary>
+		/// The full name of the object.
+		/// </summary>
+		public SqlName SqlName { get { return _implementation.Name; } }
+
         /// <summary>
         /// The type of the SchemaObject
         /// </summary>
@@ -142,6 +147,11 @@ namespace Insight.Database.Schema
 			return connection.DoNotLog(() => _implementation.CanModify(context, connection));
 		}
 
+		public bool CanModify(IDbConnection connection)
+		{
+			return _implementation.CanModify(new SchemaInstaller.InstallContext(), connection);
+		}
+
         /// <summary>
         /// Drop an object from the database
         /// </summary>
@@ -152,8 +162,7 @@ namespace Insight.Database.Schema
         {
 			var implementation = SchemaImpl.GetImplementation(type, objectName, null);
 
-			if (implementation.CanDrop())
-				implementation.Drop(connection);
+			implementation.Drop(connection);
 		}
         #endregion
 

@@ -37,14 +37,14 @@ namespace Insight.Database.Schema.Implementation
 			}
 		}
 
-		public virtual bool CanDrop()
+		public virtual bool CanDrop(SchemaInstaller.InstallContext context, IDbConnection connection)
 		{
 			return true;
 		}
 
 		public virtual bool CanModify(SchemaInstaller.InstallContext context, IDbConnection connection)
 		{
-			return CanDrop();
+			return CanDrop(context, connection);
 		}
 
 		public abstract void Drop(IDbConnection connection);
