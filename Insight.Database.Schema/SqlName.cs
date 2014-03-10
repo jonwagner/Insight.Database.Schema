@@ -55,12 +55,11 @@ namespace Insight.Database.Schema
 		{
 			Original = fullName;
 
-			var split = Regex.Matches(fullName, @"(\[[^\]]+\])|([\w\d]+)").OfType<Match>().Select(m => m.Value).ToArray();
-
-			while (split.Length < expectedParts)
+			var split = SplitSqlName(fullName);
+			if (split.Length < expectedParts)
 			{
 				fullName = "[dbo]." + fullName;
-				split = SqlParser.SplitSqlName(fullName);
+				split = SplitSqlName(fullName);
 			}
 
 			// in some special cases (autoproc, permissions), we just need the original
@@ -91,6 +90,12 @@ namespace Insight.Database.Schema
 			Schema = SqlParser.UnformatSqlName(Schema);
 			Table = SqlParser.UnformatSqlName(Table);
 			Object = SqlParser.UnformatSqlName(Object);
+		}
+
+		private static string[] SplitSqlName(string fullName)
+		{
+			var split = Regex.Matches(fullName, @"(\[[^\]]+\])|([\w\d]+)").OfType<Match>().Select(m => m.Value).ToArray();
+			return split;
 		}
 
 		public SqlName Append(string objectName)

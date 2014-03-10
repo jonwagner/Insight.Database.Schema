@@ -20,17 +20,24 @@ namespace Insight.Database.Schema.Implementation
             // check permissions by querying the permissions table
 			Match m = Regex.Match(Name.Original, String.Format(CultureInfo.InvariantCulture, @"(?<permission>\w+)\s+ON\s+(?<object>{0})\s+TO\s+(?<user>{0})", SqlParser.SqlNameExpression));
 
+			var userName = new SqlName(m.Groups["user"].Value, 1);
+			var objectName = new SqlName(m.Groups["object"].Value, 2);
+
 			var permissions = connection.QuerySql(@"SELECT PermissionName=p.permission_name, ObjectType=ISNULL(o.type_desc, p.class_desc)
 					FROM sys.database_principals u
 					JOIN sys.database_permissions p ON (u.principal_id = p.grantee_principal_id)
 					LEFT JOIN sys.objects o ON (p.class_desc = 'OBJECT_OR_COLUMN' AND p.major_id = o.object_id)
+					LEFT JOIN sys.schemas os ON (o.schema_id = os.schema_id AND os.name = @SchemaName)
 					LEFT JOIN sys.types t ON (p.class_desc = 'TYPE' AND p.major_id = t.user_type_id)
 					LEFT JOIN sys.schemas s ON (p.class_desc = 'SCHEMA' AND p.major_id = s.schema_id)
-					WHERE state_desc IN ('GRANT', 'GRANT_WITH_GRANT_OPTION') AND u.name = @UserName AND COALESCE(o.name, t.name, s.name) = @ObjectName",
+					WHERE state_desc IN ('GRANT', 'GRANT_WITH_GRANT_OPTION')
+						AND u.name = @UserName 
+						AND COALESCE(o.name, t.name, s.name) = @ObjectName",
 					new Dictionary<string, object>()
 					{ 
-						{ "UserName", SqlParser.UnformatSqlName(m.Groups["user"].Value) },
-						{ "ObjectName", SqlParser.UnformatSqlName(SqlParser.IndexNameFromFullName(m.Groups["object"].Value)) }
+						{ "UserName", userName.Object },
+						{ "SchemaName", objectName.Schema },
+						{ "ObjectName", objectName.Object }
 					});
 
 			string type = permissions.Select((dynamic p) => p.ObjectType).FirstOrDefault();

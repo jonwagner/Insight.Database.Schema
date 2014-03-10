@@ -562,7 +562,7 @@ namespace Insight.Database.Schema
 
 				// script the column drop
 				StringBuilder sb = new StringBuilder();
-				sb.AppendFormat("ALTER TABLE {0}", SqlParser.ReformatSqlName(oldTableName));
+				sb.AppendFormat("ALTER TABLE {0}", oldTableName);
 				sb.Append(" DROP");
 				sb.AppendLine(String.Join(",", missingColumns.Select((dynamic o) => String.Format(" COLUMN {0}", SqlParser.FormatSqlName(o.Name)))));
 				context.AddObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
@@ -572,7 +572,7 @@ namespace Insight.Database.Schema
 			if (addColumns.Any())
 			{
 				StringBuilder sb = new StringBuilder();
-				sb.AppendFormat("ALTER TABLE {0}", SqlParser.ReformatSqlName(oldTableName));
+				sb.AppendFormat("ALTER TABLE {0}", oldTableName);
 				sb.Append(" ADD ");
 				sb.AppendLine(String.Join(", ", addColumns.Select((dynamic o) => GetColumnDefinition(o) + GetDefaultDefinition(o))));
 				context.AddObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
@@ -591,7 +591,7 @@ namespace Insight.Database.Schema
 				if (!areColumnsEqual(column, oldColumn))
 				{
 					StringBuilder sb = new StringBuilder();
-					sb.AppendFormat("ALTER TABLE {0} ALTER COLUMN ", SqlParser.ReformatSqlName(oldTableName));
+					sb.AppendFormat("ALTER TABLE {0} ALTER COLUMN ", oldTableName);
 					sb.AppendFormat(GetColumnDefinition(column));
 					context.AddObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
 				}
@@ -603,7 +603,7 @@ namespace Insight.Database.Schema
 					if (oldColumn.DefaultName != null && !context.SchemaRegistry.Contains(getConstraintName(oldColumn)))
 					{
 						// script the default drop
-						string dropConstraint = String.Format("ALTER TABLE {0} DROP CONSTRAINT {1}", SqlParser.ReformatSqlName(oldTableName), SqlParser.FormatSqlName(oldColumn.DefaultName));
+						string dropConstraint = String.Format("ALTER TABLE {0} DROP CONSTRAINT {1}", oldTableName, SqlParser.FormatSqlName(oldColumn.DefaultName));
 						context.AddObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, dropConstraint));
 					}
 
@@ -612,7 +612,7 @@ namespace Insight.Database.Schema
 					{
 						// script the add
 						StringBuilder sb = new StringBuilder();
-						sb.AppendFormat("ALTER TABLE {0} ADD ", SqlParser.ReformatSqlName(oldTableName));
+						sb.AppendFormat("ALTER TABLE {0} ADD ", oldTableName);
 						sb.AppendFormat(GetDefaultDefinition(column));
 						sb.AppendFormat(" FOR {0}", SqlParser.FormatSqlName(column.Name));
 						context.AddObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
@@ -1065,7 +1065,7 @@ namespace Insight.Database.Schema
 						JOIN sys.objects o ON (i.object_id = o.object_id)
 						JOIN sys.xml_indexes p ON (p.index_id = i.using_xml_index_id)
 						WHERE p.name = @ObjectName",
-					new Dictionary<string, object>() { { "ObjectName", SqlParser.IndexNameFromFullName(schemaObject.Name) } });
+					new Dictionary<string, object>() { { "ObjectName", schemaObject.SqlName.Object } });
 			}
 			else
 			{
