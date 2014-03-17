@@ -23,7 +23,7 @@ namespace Insight.Database.Schema
 		/// <summary>
 		/// A string that is added to the hash of the dependencies so that the AutoProc can be forced to change if the internal implementation changes.
 		/// </summary>
-		private static string VersionSignature = "2.1.0.3";
+		private static string VersionSignature = "2.2.0.1";
 
 		/// <summary>
 		/// The exception thrown when an optimistic concurrency error is detected.
@@ -245,7 +245,10 @@ namespace Insight.Database.Schema
 			StringBuilder sb = new StringBuilder();
 
 			sb.AppendLine("DECLARE @T TABLE(");
-			sb.Append(String.Join(",\n", columns.Select(c => String.Format(CultureInfo.InvariantCulture, "{0} {1}", c.ColumnName, c.SqlType))));
+			sb.Append(String.Join(",\n", columns.Select(c => 
+				String.Format("{0} {1}", 
+				c.ColumnName,
+				(String.Compare(c.SqlType, "rowversion", StringComparison.OrdinalIgnoreCase) == 0 || String.Compare(c.SqlType, "timestamp", StringComparison.OrdinalIgnoreCase) == 0) ? "binary(8)" : c.SqlType))));
 			sb.AppendLine(")");
 
 			return sb.ToString();
@@ -258,7 +261,7 @@ namespace Insight.Database.Schema
 		/// <returns>The stored procedure SQL.</returns>
 		private string GenerateInsertSql(IList<ColumnDefinition> columns)
 		{
-			IList<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly).ToList();
+			IList<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly || c.IsRowVersion || c.HasDefault).ToList();
 			IEnumerable<ColumnDefinition> insertable = columns.Where(c => !c.IsReadOnly);
 
 			// generate the sql for each proc and install them
@@ -305,7 +308,7 @@ namespace Insight.Database.Schema
 		{
 			IEnumerable<ColumnDefinition> inputs = columns.Where(c => c.IsKey || !c.IsReadOnly || c.IsRowVersion);
 			IEnumerable<ColumnDefinition> keys = columns.Where(c => c.IsKey);
-			IList<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly).ToList();
+			IList<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly || c.IsRowVersion || c.HasDefault).ToList();
 			IEnumerable<ColumnDefinition> updatable = columns.Where(c => !c.IsKey && !c.IsReadOnly);
 			ColumnDefinition timestamp = columns.Where(c => c.IsRowVersion).SingleOrDefault();
 
@@ -367,7 +370,7 @@ namespace Insight.Database.Schema
 			IEnumerable<ColumnDefinition> keys = columns.Where(c => c.IsKey);
 			IEnumerable<ColumnDefinition> updatable = columns.Where(c => !c.IsKey && !c.IsReadOnly);
 			IEnumerable<ColumnDefinition> insertable = columns.Where(c => !c.IsReadOnly);
-			IList<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly).ToList();
+			IList<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly || c.IsRowVersion || c.HasDefault).ToList();
 			ColumnDefinition timestamp = columns.Where(c => c.IsRowVersion).SingleOrDefault();
 
 			VerifyOptimisticTimestamp(optimistic, timestamp);
@@ -559,7 +562,7 @@ namespace Insight.Database.Schema
 		/// <returns>The stored procedure SQL.</returns>
 		private string GenerateInsertManySql(IList<ColumnDefinition> columns)
 		{
-			IList<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly).ToList();
+			IList<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly || c.IsRowVersion || c.HasDefault).ToList();
 			IEnumerable<ColumnDefinition> insertable = columns.Where(c => !c.IsReadOnly);
 
 			string parameterName = _singularTableName;
@@ -607,7 +610,7 @@ namespace Insight.Database.Schema
 		{
 			IEnumerable<ColumnDefinition> keys = columns.Where(c => c.IsKey);
 			IEnumerable<ColumnDefinition> updatable = columns.Where(c => !c.IsReadOnly);
-			IList<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly).ToList();
+			IList<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly || c.IsRowVersion || c.HasDefault).ToList();
 			ColumnDefinition timestamp = columns.Where(c => c.IsRowVersion).SingleOrDefault();
 
 			VerifyOptimisticTimestamp(optimistic, timestamp);
@@ -673,7 +676,7 @@ namespace Insight.Database.Schema
 			IEnumerable<ColumnDefinition> keys = columns.Where(c => c.IsKey);
 			IEnumerable<ColumnDefinition> updatable = columns.Where(c => !c.IsKey && !c.IsReadOnly);
 			IEnumerable<ColumnDefinition> insertable = columns.Where(c => !c.IsReadOnly);
-			IList<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly).ToList();
+			IList<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly || c.IsRowVersion || c.HasDefault).ToList();
 			ColumnDefinition timestamp = columns.Where(c => c.IsRowVersion).SingleOrDefault();
 
 			VerifyOptimisticTimestamp(optimistic, timestamp);

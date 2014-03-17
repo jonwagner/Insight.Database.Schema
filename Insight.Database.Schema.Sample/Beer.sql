@@ -5,6 +5,8 @@
 	[Flavor] [nvarchar](128) NULL,
 	[OriginalGravity] [decimal](18, 2) NULL,
 	[Details] [varchar](MAX),
+	[Hoppiness] [int] DEFAULT(6),
+	[Yumminess] AS [Hoppiness] * 2,
 	[RowVersion] [timestamp]
 ) ON [PRIMARY]
 GO

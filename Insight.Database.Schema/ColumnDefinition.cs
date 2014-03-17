@@ -47,6 +47,11 @@ namespace Insight.Database.Schema
 		public bool IsUpdateNullable { get; set; }
 
 		/// <summary>
+		/// True if the column has a default
+		/// </summary>
+		public bool HasDefault { get; set; }
+
+		/// <summary>
 		/// The name of the column formatted properly for use as a SQL column.
 		/// </summary>
 		public string ColumnName { get { return SqlParser.FormatSqlName(Name); } }
