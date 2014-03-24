@@ -591,6 +591,15 @@ namespace Insight.Database.Schema
 				if (!areColumnsEqual(column, oldColumn))
 				{
 					StringBuilder sb = new StringBuilder();
+
+					// if the old column is nullable and the new one is not, and there is a default, then convert the data
+					if (oldColumn.IsNullable && !column.IsNullable && column.DefaultName != null)
+					{
+						string defaultDefinition = column.DefaultDefinition.Substring(2, column.DefaultDefinition.Length - 4);
+						sb.AppendFormat("UPDATE {0} SET {1} = 2 WHERE {1} IS NULL\n", oldTableName, column.Name, defaultDefinition);
+					}
+
+					// alter the column
 					sb.AppendFormat("ALTER TABLE {0} ALTER COLUMN ", oldTableName);
 					sb.AppendFormat(GetColumnDefinition(column));
 					context.AddObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
@@ -599,24 +608,25 @@ namespace Insight.Database.Schema
 				// modify the defaults
 				if (!areDefaultsEqual(column, oldColumn))
 				{
+					StringBuilder sb = new StringBuilder();
+
 					// delete the old default if it exists but it's not in the registry
 					if (oldColumn.DefaultName != null && !context.SchemaRegistry.Contains(getConstraintName(oldColumn)))
 					{
 						// script the default drop
-						string dropConstraint = String.Format("ALTER TABLE {0} DROP CONSTRAINT {1}", oldTableName, SqlParser.FormatSqlName(oldColumn.DefaultName));
-						context.AddObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, dropConstraint));
+						sb.AppendFormat("ALTER TABLE {0} DROP CONSTRAINT {1}\nGO\n", oldTableName, SqlParser.FormatSqlName(oldColumn.DefaultName));
 					}
 
 					// add the new default if we want one
 					if (column.DefaultName != null)
 					{
 						// script the add
-						StringBuilder sb = new StringBuilder();
 						sb.AppendFormat("ALTER TABLE {0} ADD ", oldTableName);
 						sb.AppendFormat(GetDefaultDefinition(column));
 						sb.AppendFormat(" FOR {0}", SqlParser.FormatSqlName(column.Name));
-						context.AddObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
 					}
+
+					context.AddObjects.Add(new SchemaObject(SchemaObjectType.Table, oldTableName, sb.ToString()));
 				}
 			}
 			#endregion
@@ -630,7 +640,7 @@ namespace Insight.Database.Schema
 		private IEnumerable<FastExpando> GetColumnsForTable(string tableName)
 		{
 			return _connection.QuerySql(String.Format(CultureInfo.InvariantCulture, @"
-				SELECT Name=c.name, ColumnID=c.column_id, TypeName = t.name, MaxLength=c.max_length, Precision=c.precision, Scale=c.scale, IsNullable=c.is_nullable, IsIdentity=c.is_identity, IdentitySeed=i.seed_value, IdentityIncrement=i.increment_value, Definition=cc.definition,
+				SELECT Name=c.name, ObjectID=c.object_id, ColumnID=c.column_id, TypeName = t.name, MaxLength=c.max_length, Precision=c.precision, Scale=c.scale, IsNullable=c.is_nullable, IsIdentity=c.is_identity, IdentitySeed=i.seed_value, IdentityIncrement=i.increment_value, Definition=cc.definition,
 				DefaultName=REPLACE(d.name, '{0}', ''), DefaultIsSystemNamed=d.is_system_named, DefaultDefinition=d.definition
 					FROM sys.columns c
 					JOIN sys.types t ON (c.system_type_id = t.system_type_id AND c.user_type_id = t.user_type_id)

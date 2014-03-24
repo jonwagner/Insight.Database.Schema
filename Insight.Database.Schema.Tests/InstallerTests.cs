@@ -502,6 +502,21 @@ namespace Insight.Database.Schema.Tests
 		}
 		#endregion
 
+		[Test]
+		public void TestTableWithDefaultAndData(
+			[ValueSource("ConnectionStrings")] string connectionString
+		)
+		{
+			var before = new string[] { "CREATE TABLE Foo (id int default(6) NULL)" };
+			var after = new string[] { "CREATE TABLE Foo (id int default(12) NOT NULL)" };
+
+			TestWithRollback(connectionString, connection =>
+			{
+				Install(connection, before);
+				connection.ExecuteSql("INSERT INTO Foo (id) VALUES (NULL)");
+				Install(connection, after);
+			});
+		}
 
 		#region Helper Functions
 		/// <summary>
