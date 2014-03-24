@@ -10,7 +10,7 @@ namespace Insight.Database.Schema.Implementation
 {
 	class Service : SchemaImpl
 	{
-		public Service(string name, string sql) : base(CleanupName(name), sql, 1)
+		public Service(string name, string sql) : base(name, sql, 1)
 		{
 		}
 
@@ -26,11 +26,6 @@ namespace Insight.Database.Schema.Implementation
 		public override void Drop(IDbConnection connection)
 		{
 			connection.ExecuteSql(String.Format(@"DROP SERVICE {0}", Name.ObjectFormatted));
-		}
-
-		private static string CleanupName(string name)
-		{
-			return Regex.Match(name, @"SERVICE (?<name>.*)", RegexOptions.IgnoreCase).Groups["name"].Value;
 		}
 	}
 }

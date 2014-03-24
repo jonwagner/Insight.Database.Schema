@@ -10,7 +10,7 @@ namespace Insight.Database.Schema.Implementation
 {
 	class User : SchemaImpl
 	{
-		public User(string name, string sql) : base(CleanupName(name), sql, 1)
+		public User(string name, string sql) : base(name, sql, 1)
 		{
 		}
 
@@ -25,11 +25,6 @@ namespace Insight.Database.Schema.Implementation
 		public override void Drop(IDbConnection connection)
 		{
 			connection.ExecuteSql(String.Format(@"DROP USER {0}", Name.ObjectFormatted));
-		}
-
-		private static string CleanupName(string name)
-		{
-			return Regex.Match(name, @"USER (?<name>.*)", RegexOptions.IgnoreCase).Groups["name"].Value;
 		}
 	}
 }

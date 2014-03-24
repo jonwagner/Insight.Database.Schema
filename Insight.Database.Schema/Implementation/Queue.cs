@@ -10,7 +10,7 @@ namespace Insight.Database.Schema.Implementation
 {
 	class Queue : SchemaImpl
 	{
-		public Queue(string name, string sql) : base(CleanupName(name), sql, 2)
+		public Queue(string name, string sql) : base(name, sql, 2)
 		{
 		}
 
@@ -36,11 +36,6 @@ namespace Insight.Database.Schema.Implementation
 		public override void Drop(IDbConnection connection)
 		{
 			connection.ExecuteSql(String.Format(@"DROP QUEUE {0}", Name.SchemaQualifiedObject));
-		}
-
-		private static string CleanupName(string name)
-		{
-			return Regex.Match(name, @"QUEUE (?<name>.*)", RegexOptions.IgnoreCase).Groups["name"].Value;
 		}
 	}
 }

@@ -50,14 +50,26 @@ namespace Insight.Database.Schema
 					}).ToList();
 
 				// automatically handle the old format for entries
-				// WAS: [ROLE foo]
-				// NOW: ROLE [foo]
-				foreach (var entry in Entries.Where(e => e.Type == SchemaObjectType.Queue || e.Type == SchemaObjectType.Service || e.Type == SchemaObjectType.Role))
-					entry.ObjectName = _registryUpgradeRegex.Replace(entry.ObjectName, "$1 [");
+				// WAS: 'ROLE [foo]'
+				// NOW: '[foo]'
+				foreach (var entry in Entries.Where(e =>
+					e.Type == SchemaObjectType.Schema ||
+					e.Type == SchemaObjectType.Login ||
+					e.Type == SchemaObjectType.User ||
+					e.Type == SchemaObjectType.Role ||
+					e.Type == SchemaObjectType.Queue || 
+					e.Type == SchemaObjectType.Service))
+					entry.ObjectName = _registryUpgradeRegex.Replace(entry.ObjectName, "");
+
+				// automatically reformat names to fully qualified name
+				// WAS: '[foo]'
+				// NOW: '[dbo].[foo]'
+				foreach (var entry in Entries)
+					entry.ObjectName = new SchemaObject(entry.Type, entry.ObjectName, null).Name;
 			});
 		}
 
-		private static readonly Regex _registryUpgradeRegex = new Regex(@"^\[((ROLE)|(QUEUE)|(SERVICE))\s*", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+		private static readonly Regex _registryUpgradeRegex = new Regex(@"^((SCHEMA)|(LOGIN)|(USER)|(ROLE)|(QUEUE)|(SERVICE))\s*", RegexOptions.IgnoreCase | RegexOptions.Compiled);
         #endregion
 
         #region Public Methods

@@ -10,7 +10,7 @@ namespace Insight.Database.Schema.Implementation
 {
 	class Login : SchemaImpl
 	{
-		public Login(string name, string sql) : base(CleanupName(name), sql, 1)
+		public Login(string name, string sql) : base(name, sql, 1)
 		{
 		}
 
@@ -22,14 +22,21 @@ namespace Insight.Database.Schema.Implementation
 				Name.Object));
 		}
 
+		public override void Install(IDbConnection connection, IEnumerable<SchemaObject> objects)
+		{
+			if (!Exists(connection))
+				base.Install(connection, objects);
+		}
+
+		public override bool CanDrop(SchemaInstaller.InstallContext context, IDbConnection connection)
+		{
+			// assume that logins can be used across the server
+			return false;
+		}
+
 		public override void Drop(IDbConnection connection)
 		{
 			connection.ExecuteSql(String.Format(@"DROP LOGIN {0}", Name.ObjectFormatted));
-		}
-
-		private static string CleanupName(string name)
-		{
-			return Regex.Match(name, @"LOGIN (?<name>.*)", RegexOptions.IgnoreCase).Groups["name"].Value;
 		}
 	}
 }

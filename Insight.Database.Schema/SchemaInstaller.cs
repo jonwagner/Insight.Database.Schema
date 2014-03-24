@@ -780,7 +780,7 @@ namespace Insight.Database.Schema
 		private void ScriptStandardDependencies(InstallContext context, SchemaObject schemaObject)
 		{
 			// can only script dependencies for objects with names
-			if (schemaObject.SqlName.FullName == null)
+			if (schemaObject.SqlName.SchemaQualifiedObject == null)
 				return;
 
 			// find all of the dependencies on the object
@@ -797,12 +797,20 @@ namespace Insight.Database.Schema
 				LEFT JOIN sys.check_constraints c ON (o.object_id = c.object_id)
 				WHERE ISNULL(c.is_system_named, 0) = 0 AND
 					o.type_desc <> 'USER_TABLE' AND 
-					(o.parent_object_id = OBJECT_ID(@ObjectName) OR
+					(o.parent_object_id = OBJECT_ID(@QualifiedName) OR
 					d.referenced_id =
-						CASE WHEN d.referenced_class_desc = 'TYPE' THEN (SELECT user_type_id FROM sys.types t WHERE t.name = @ObjectName)
-						ELSE OBJECT_ID(@ObjectName)
+						CASE WHEN d.referenced_class_desc = 'TYPE' THEN 
+							(SELECT user_type_id 
+							FROM sys.types t JOIN sys.schemas s ON (t.schema_id = s.schema_id)
+							WHERE s.name = @SchemaName AND t.name = @ObjectName)
+						ELSE OBJECT_ID(@QualifiedName)
 					END)",
-				new Dictionary<string, object>() { { "ObjectName", schemaObject.SqlName.FullName } });
+				new Dictionary<string, object>()
+				{
+					{ "QualifiedName", schemaObject.SqlName.SchemaQualifiedObject },
+					{ "SchemaName", schemaObject.SqlName.Schema },
+					{ "ObjectName", schemaObject.SqlName.Object },
+				});
 
 			foreach (dynamic dependency in dependencies)
 			{
@@ -872,7 +880,7 @@ namespace Insight.Database.Schema
 					JOIN sys.objects o ON (f.parent_object_id = o.object_id)
 					JOIN sys.objects ro ON (k.parent_object_id = ro.object_id)
 					WHERE k.parent_object_id = OBJECT_ID(@ObjectID)",
-				new Dictionary<string, object>() { { "ObjectID", schemaObject.SqlName.FullName } });
+				new Dictionary<string, object>() { { "ObjectID", schemaObject.SqlName.SchemaQualifiedTable } });
 			}
 
 			foreach (dynamic foreignKey in foreignKeys)

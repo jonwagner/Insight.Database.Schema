@@ -6,7 +6,7 @@ using System.Text.RegularExpressions;
 
 namespace Insight.Database.Schema
 {
-	public class SqlName
+	public class SqlName : IEquatable<SqlName>
 	{
 		public string Original { get; private set; }
 		public string Schema { get; private set; }
@@ -47,7 +47,7 @@ namespace Insight.Database.Schema
 				if (Table != Object)
 					name += "." + ObjectFormatted;
 
-				return name;
+				return name ?? Original;
 			}
 		}
 
@@ -71,7 +71,7 @@ namespace Insight.Database.Schema
 				Table = split[0];
 				Object = split[0];
 			}
-			if (split.Length == 2)
+			else if (split.Length == 2)
 			{
 				Schema = split[0];
 				Table = split[1];
@@ -84,7 +84,7 @@ namespace Insight.Database.Schema
 				Object = split[2];
 			}
 
-			if (String.IsNullOrWhiteSpace(Schema))
+			if (split.Length > 1 && String.IsNullOrWhiteSpace(Schema))
 				Schema = "dbo";
 
 			Schema = SqlParser.UnformatSqlName(Schema);
@@ -106,6 +106,13 @@ namespace Insight.Database.Schema
 			child.Object = SqlParser.UnformatSqlName(objectName);
 
 			return child;
+		}
+
+		public bool Equals(SqlName other)
+		{
+			return String.Compare(Schema, other.Schema, StringComparison.OrdinalIgnoreCase) == 0 &&
+				String.Compare(Table, other.Table, StringComparison.OrdinalIgnoreCase) == 0 &&
+				String.Compare(Object, other.Object, StringComparison.OrdinalIgnoreCase) == 0;
 		}
 	}
 }

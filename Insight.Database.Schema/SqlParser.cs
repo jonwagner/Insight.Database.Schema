@@ -37,8 +37,8 @@ namespace Insight.Database.Schema
 			parsers.Add(new SqlParser(SchemaObjectType.MessageType, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+MESSAGE TYPE\s+(?<name>{0})", SqlNameExpression)));
 			parsers.Add(new SqlParser(SchemaObjectType.Contract, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+CONTRACT\s+(?<name>{0})", SqlNameExpression)));
 			parsers.Add(new SqlParser(SchemaObjectType.BrokerPriority, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+BROKER\s+PRIORITY\s+(?<name>{0})", SqlNameExpression)));
-			parsers.Add(new SqlParser(SchemaObjectType.Queue, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+QUEUE\s+(?<name>{0})", SqlNameExpression), "QUEUE $1"));
-			parsers.Add(new SqlParser(SchemaObjectType.Service, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+SERVICE\s+(?<name>{0})", SqlNameExpression), "SERVICE $1"));
+			parsers.Add(new SqlParser(SchemaObjectType.Queue, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+QUEUE\s+(?<name>{0})", SqlNameExpression)));
+			parsers.Add(new SqlParser(SchemaObjectType.Service, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+SERVICE\s+(?<name>{0})", SqlNameExpression)));
 			parsers.Add(new SqlParser(SchemaObjectType.Table, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+TABLE\s+(?<name>{0})", SqlNameExpression)));
 			parsers.Add(new SqlParser(SchemaObjectType.Trigger, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+TRIGGER\s+(?<name>{0})", SqlNameExpression)));
 			parsers.Add(new SqlParser(SchemaObjectType.Index, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+(UNIQUE\s+)?(((CLUSTERED)|(NONCLUSTERED))\s+)?INDEX\s+(?<indname>{0})\s+ON\s+(?<tablename>{0})", SqlNameExpression), "$2.$1"));
@@ -52,10 +52,10 @@ namespace Insight.Database.Schema
 			parsers.Add(new SqlParser(SchemaObjectType.Function, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+FUNCTION\s+(?<name>{0})", SqlNameExpression)));
 			parsers.Add(new SqlParser(SchemaObjectType.PrimaryXmlIndex, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+PRIMARY\s+XML\s+INDEX\s+(?<name>{0})\s+ON\s+(?<tablename>{0})", SqlNameExpression), "$2.$1"));
 			parsers.Add(new SqlParser(SchemaObjectType.SecondaryXmlIndex, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+XML\s+INDEX\s+(?<name>{0})\s+ON\s+(?<tablename>{0})", SqlNameExpression), "$2.$1"));
-			parsers.Add(new SqlParser(SchemaObjectType.Login, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+LOGIN\s+(?<name>{0})", SqlNameExpression), "LOGIN $1"));
-			parsers.Add(new SqlParser(SchemaObjectType.User, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+USER\s+(?<name>{0})", SqlNameExpression), "USER $1"));
-			parsers.Add(new SqlParser(SchemaObjectType.Role, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+ROLE\s+(?<name>{0})", SqlNameExpression), "ROLE $1"));
-			parsers.Add(new SqlParser(SchemaObjectType.Schema, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+SCHEMA\s+(?<name>{0})", SqlNameExpression), "SCHEMA $1"));
+			parsers.Add(new SqlParser(SchemaObjectType.Login, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+LOGIN\s+(?<name>{0})", SqlNameExpression), "$1"));
+			parsers.Add(new SqlParser(SchemaObjectType.User, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+USER\s+(?<name>{0})", SqlNameExpression)));
+			parsers.Add(new SqlParser(SchemaObjectType.Role, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+ROLE\s+(?<name>{0})", SqlNameExpression)));
+			parsers.Add(new SqlParser(SchemaObjectType.Schema, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+SCHEMA\s+(?<name>{0})", SqlNameExpression)));
 			parsers.Add(new SqlParser(SchemaObjectType.Unused, String.Format(CultureInfo.InvariantCulture, @"SET\s+ANSI_NULLS", SqlNameExpression), null));
 			parsers.Add(new SqlParser(SchemaObjectType.Unused, String.Format(CultureInfo.InvariantCulture, @"SET\s+QUOTED_IDENTIFIER", SqlNameExpression), null));
 			parsers.Add(new SqlParser(SchemaObjectType.Unused, String.Format(CultureInfo.InvariantCulture, @"SET\s+ARITHABORT", SqlNameExpression), null));
@@ -140,27 +140,6 @@ namespace Insight.Database.Schema
 				if (SchemaObjectType != Schema.SchemaObjectType.Unused)
 				{
 					string name = match.Result(_nameTemplate);
-					string[] pieces;
-
-					switch (SchemaObjectType)
-					{
-						case SchemaObjectType.Service:
-						case SchemaObjectType.Queue:
-						case SchemaObjectType.Role:
-						case SchemaObjectType.Schema:
-							pieces = name.Split(new char[] { ' ' }, 2, StringSplitOptions.RemoveEmptyEntries);
-							name = pieces[0] + " " + FormatSqlName(pieces[1]);
-							break;
-
-						case SchemaObjectType.Permission:
-						case SchemaObjectType.AutoProc:
-							break;
-
-						default:
-							// for most types, reformat the name to a fully qualified sql name
-							//name = ReformatSqlName(name);
-							break;
-					}
 
 					// return a match
 					parserMatch.Name = name;

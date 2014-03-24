@@ -206,6 +206,9 @@ namespace Insight.Database.Schema.Tests
 				List<string> modifiedSchema = schema.ToList();
 				for (int i = modifiedSchema.Count - 1; i >= 0; i--)
 				{
+					if (!new SchemaObject(modifiedSchema[i]).CanModify(connection))
+						continue;
+
 					// modify the schema
 					modifiedSchema[i] = modifiedSchema[i] + " -- MODIFIED ";
 

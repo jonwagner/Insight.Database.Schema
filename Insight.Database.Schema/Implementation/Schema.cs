@@ -10,7 +10,7 @@ namespace Insight.Database.Schema.Implementation
 {
 	class Schema : SchemaImpl
 	{
-		public Schema(string name, string sql) : base(CleanupName(name), sql, 1)
+		public Schema(string name, string sql) : base(name, sql, 1)
 		{
 		}
 
@@ -27,11 +27,6 @@ namespace Insight.Database.Schema.Implementation
 		public override bool CanDrop(SchemaInstaller.InstallContext context, IDbConnection connection)
 		{
 			return 0 == connection.ExecuteScalarSql<int>(String.Format("SELECT COUNT(*) FROM sys.objects o WHERE o.schema_id = SCHEMA_ID('{0}')", Name.Object));
-		}
-
-		private static string CleanupName(string name)
-		{
-			return Regex.Match(name, @"SCHEMA (?<name>.*)", RegexOptions.IgnoreCase).Groups["name"].Value;
 		}
 	}
 }

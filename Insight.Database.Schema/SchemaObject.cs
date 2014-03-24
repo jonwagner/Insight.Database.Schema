@@ -32,13 +32,10 @@ namespace Insight.Database.Schema
         internal SchemaObject (SchemaObjectType type, string name, string sql)
         {
             if (name == null) throw new ArgumentNullException ("name");
-            if (sql == null) throw new ArgumentNullException ("sql");
-
 
             _type = type;
-            _name = name;
             _sql = sql;
-			_implementation = SchemaImpl.GetImplementation(_type, _name, _sql);
+			_implementation = SchemaImpl.GetImplementation(_type, name, _sql);
         }
 
         /// <summary>
@@ -49,8 +46,8 @@ namespace Insight.Database.Schema
         public SchemaObject (string sql)
         {
 			_sql = sql;
-            ParseSql ();
-			_implementation = SchemaImpl.GetImplementation(_type, _name, _sql);
+			var name = ParseSql();
+			_implementation = SchemaImpl.GetImplementation(_type, name, _sql);
 		}
         #endregion
 
@@ -76,8 +73,7 @@ namespace Insight.Database.Schema
         /// The name of the SchemaObject
         /// </summary>
         /// <value>The name of the SchemaObject</value>
-        public string Name { get { return _name; } }
-        private string _name;
+        public string Name { get { return SqlName.FullName; } }
 
 		/// <summary>
 		/// The full name of the object.
@@ -98,7 +94,7 @@ namespace Insight.Database.Schema
 		internal string GetSignature(IDbConnection connection, IEnumerable<SchemaObject> objects)
 		{
 			if (_type == Schema.SchemaObjectType.AutoProc)
-				return new AutoProc(_name, new SqlColumnDefinitionProvider(connection), objects).Signature;
+				return new AutoProc(Name, new SqlColumnDefinitionProvider(connection), objects).Signature;
 			else
 				return CalculateSignature(Sql);
 		}
@@ -194,7 +190,7 @@ namespace Insight.Database.Schema
         /// <summary>
         /// Parse the SQL to determine the type and name
         /// </summary>
-        private void ParseSql ()
+        private string ParseSql ()
         {
 			// find the first match by position, then by type
 			var match = SqlParser.Parsers.Select(p => p.Match(_sql))
@@ -214,7 +210,8 @@ namespace Insight.Database.Schema
 
 			// fill in the type and name
 			_type = match.SchemaObjectType;
-			_name = match.Name;
+			
+			return match.Name;
 		}
 		#endregion
 	}
