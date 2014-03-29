@@ -803,7 +803,8 @@ namespace Insight.Database.Schema
 		/// <returns>The stored procedure SQL.</returns>
 		private string GenerateFindSql(IList<ColumnDefinition> columns)
 		{
-			string parameterName = _singularTableName;
+		    string parameterName = _singularTableName;
+		    const string cteName = "_insightcte";
 
 			// generate the sql for each proc and install them
 			StringBuilder sb = new StringBuilder();
@@ -822,7 +823,8 @@ namespace Insight.Database.Schema
 			if (_executeAsOwner)
 				sb.AppendLine("WITH EXECUTE AS OWNER");
 			sb.AppendLine("AS");
-			sb.AppendLine("DECLARE @sql [nvarchar](MAX) = ';WITH _insightcte AS (SELECT '");
+		    sb.AppendFormat("DECLARE @sql [nvarchar](MAX) = ';WITH {0} AS (SELECT '", cteName);
+            sb.AppendLine();
 			sb.AppendLine("\tIF @Top IS NOT NULL AND @Skip IS NULL SET @sql = @sql + 'TOP (@Top) '");
 			sb.AppendFormat("SET @sql = @sql + ' * FROM {0} WHERE 1=1'", _tableName.SchemaQualifiedTable);
 			sb.AppendLine();
@@ -841,7 +843,8 @@ namespace Insight.Database.Schema
 		    sb.AppendLine("IF @TotalRowsColumn IS NOT NULL SET @sql = @sql + ', count(*) over() AS ' + @TotalRowsColumn");
 
             // finish select from cte
-            sb.AppendLine("SET @sql = @sql + ' FROM _insightcte '");
+		    sb.AppendFormat("SET @sql = @sql + ' FROM {0} '", cteName);
+            sb.AppendLine();
 
 			// handle order by
 			sb.AppendLine("IF @OrderBy IS NOT NULL SET @sql = @sql + ' ORDER BY ' + CASE WHEN @OrderBy IN (");
