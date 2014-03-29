@@ -816,12 +816,13 @@ namespace Insight.Database.Schema
 			sb.AppendLine("\t@Skip [int] = NULL,");
 			sb.AppendLine("\t@OrderBy [nvarchar](256) = NULL,");
 			sb.AppendLine("\t@ThenBy [nvarchar](256) = NULL,");
+		    sb.AppendLine("\t@TotalRowsColumn [nvarchar](256) = NULL,");
 			sb.AppendLine(Join(columns, ",", "{1}Operator [varchar](10) = '='"));
 			sb.AppendLine(")");
 			if (_executeAsOwner)
 				sb.AppendLine("WITH EXECUTE AS OWNER");
 			sb.AppendLine("AS");
-			sb.AppendLine("DECLARE @sql [nvarchar](MAX) = 'SELECT '");
+			sb.AppendLine("DECLARE @sql [nvarchar](MAX) = ';WITH _insightcte AS (SELECT '");
 			sb.AppendLine("\tIF @Top IS NOT NULL AND @Skip IS NULL SET @sql = @sql + 'TOP (@Top) '");
 			sb.AppendFormat("SET @sql = @sql + ' * FROM {0} WHERE 1=1'", _tableName.SchemaQualifiedTable);
 			sb.AppendLine();
@@ -832,6 +833,15 @@ namespace Insight.Database.Schema
 				"\r\n\tWHEN {1}Operator IS NOT NULL AND {1} IS NOT NULL THEN ' OPERATOR NOT SUPPORTED ON {0} '" +
 				"\r\n\tELSE ''" +
 				"\r\n\tEND"));
+
+            // close the cte; begin select from cte
+		    sb.AppendLine("SET @sql = @sql + ') select * '");
+
+            // handle total column
+		    sb.AppendLine("IF @TotalRowsColumn IS NOT NULL SET @sql = @sql + ', count(*) over() AS ' + @TotalRowsColumn");
+
+            // finish select from cte
+            sb.AppendLine("SET @sql = @sql + ' FROM _insightcte '");
 
 			// handle order by
 			sb.AppendLine("IF @OrderBy IS NOT NULL SET @sql = @sql + ' ORDER BY ' + CASE WHEN @OrderBy IN (");
