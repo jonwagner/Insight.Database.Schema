@@ -23,7 +23,7 @@ namespace Insight.Database.Schema
 		/// <summary>
 		/// A string that is added to the hash of the dependencies so that the AutoProc can be forced to change if the internal implementation changes.
 		/// </summary>
-		private static string VersionSignature = "2.2.0.1";
+		private static string VersionSignature = "2.2.3.0";
 
 		/// <summary>
 		/// The exception thrown when an optimistic concurrency error is detected.
@@ -805,6 +805,8 @@ namespace Insight.Database.Schema
 		{
 		    string parameterName = _singularTableName;
 		    const string cteName = "_insightcte";
+			const string tempTableName = "#_insighttemp";
+			const string countColumnName = "_insightTotalRows";
 
 			// generate the sql for each proc and install them
 			StringBuilder sb = new StringBuilder();
@@ -817,13 +819,14 @@ namespace Insight.Database.Schema
 			sb.AppendLine("\t@Skip [int] = NULL,");
 			sb.AppendLine("\t@OrderBy [nvarchar](256) = NULL,");
 			sb.AppendLine("\t@ThenBy [nvarchar](256) = NULL,");
-		    sb.AppendLine("\t@TotalRowsColumn [nvarchar](256) = NULL,");
+			sb.AppendLine("\t@TotalRows [int] = NULL OUTPUT,");
 			sb.AppendLine(Join(columns, ",", "{1}Operator [varchar](10) = '='"));
 			sb.AppendLine(")");
 			if (_executeAsOwner)
 				sb.AppendLine("WITH EXECUTE AS OWNER");
 			sb.AppendLine("AS");
-		    sb.AppendFormat("DECLARE @sql [nvarchar](MAX) = ';WITH {0} AS (SELECT '", cteName);
+			sb.AppendLine("SET NOCOUNT ON");
+			sb.AppendFormat("DECLARE @sql [nvarchar](MAX) = ';WITH {0} AS (SELECT '", cteName);
             sb.AppendLine();
 			sb.AppendLine("\tIF @Top IS NOT NULL AND @Skip IS NULL SET @sql = @sql + 'TOP (@Top) '");
 			sb.AppendFormat("SET @sql = @sql + ' * FROM {0} WHERE 1=1'", _tableName.SchemaQualifiedTable);
@@ -840,7 +843,8 @@ namespace Insight.Database.Schema
 		    sb.AppendLine("SET @sql = @sql + ') select * '");
 
             // handle total column
-		    sb.AppendLine("IF @TotalRowsColumn IS NOT NULL SET @sql = @sql + ', count(*) over() AS ' + @TotalRowsColumn");
+		    sb.AppendFormat("IF @TotalRows IS NOT NULL SET @sql = @sql + ', {1}=count(*) over() INTO {0}'", tempTableName, countColumnName);
+			sb.AppendLine();
 
             // finish select from cte
 		    sb.AppendFormat("SET @sql = @sql + ' FROM {0} '", cteName);
@@ -863,10 +867,13 @@ namespace Insight.Database.Schema
 			sb.AppendLine("\tIF @Top IS NOT NULL SET @sql = @sql + ' FETCH NEXT @Top ROWS ONLY'");
 			sb.AppendLine("END");
 
+			// if there is a total column, then we need to pull out the data
+			sb.AppendFormat("IF @TotalRows IS NOT NULL SET @sql = @sql + ' SELECT * FROM {0} SET NOCOUNT ON SELECT TOP 1 @TotalRows={1} FROM {0} '", tempTableName, countColumnName);
 			sb.AppendLine();
-			sb.AppendLine("EXEC sp_executesql @sql, N'@Top [int],@Skip [int],");
+
+			sb.AppendLine("EXEC sp_executesql @sql, N'@Top [int],@Skip [int],@TotalRows [int] OUTPUT,");
 			sb.AppendLine(Join(columns, ",", "{1} {2}"));
-			sb.AppendLine("', @Top=@Top,@Skip=@Skip,");
+			sb.AppendLine("', @Top=@Top,@Skip=@Skip,@TotalRows=@TotalRows OUTPUT,");
 			sb.AppendLine(Join(columns, ",", "{1}={1}"));
 
 			return sb.ToString();
