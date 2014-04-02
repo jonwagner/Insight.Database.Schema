@@ -23,14 +23,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Insight.Database.Schema.Tes
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Insight.Database.Schema.Verifier", "Insight.Database.Schema.Verifier\Insight.Database.Schema.Verifier.csproj", "{1EFC149D-87EA-437F-AA75-3AC1FA178CFA}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".nuget", ".nuget", "{E4B1493D-5284-4703-9352-5D3C64C750E5}"
-	ProjectSection(SolutionItems) = preProject
-		.nuget\NuGet.Config = .nuget\NuGet.Config
-		.nuget\NuGet.exe = .nuget\NuGet.exe
-		.nuget\NuGet.targets = .nuget\NuGet.targets
-		.nuget\packages.config = .nuget\packages.config
-	EndProjectSection
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Insight.Database.Schema.Installer", "Insight.Database.Schema.Installer\Insight.Database.Schema.Installer.csproj", "{5873421C-3B4C-478C-84F9-5D64A60E8C5C}"
 EndProject
 Global
