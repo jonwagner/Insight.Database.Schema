@@ -467,7 +467,7 @@ namespace Insight.Database.Schema
 			sb.AppendFormat("CREATE PROCEDURE {0}", MakeProcName("Delete", plural: false));
 			sb.AppendLine();
 			sb.AppendLine("(");
-			sb.AppendLine(Join(inputs, ",", "{1} {2}"));
+			sb.AppendLine(Join(inputs, ",", "{1} {2}{4}"));
 			sb.AppendLine(")");
 			sb.AppendLine("AS");
 			sb.AppendFormat("DELETE FROM {0} WHERE", _tableName.SchemaQualifiedTable);
@@ -498,7 +498,7 @@ namespace Insight.Database.Schema
 			sb.AppendLine();
 			sb.AppendLine("AS TABLE");
 			sb.AppendLine("(");
-			sb.AppendLine(Join(columns, ",", "{0} {2} {3}"));
+			sb.AppendLine(Join(columns, ",", "{0} {5} {3}"));
 			sb.AppendLine(")");
 
 			return sb.ToString();
@@ -522,7 +522,7 @@ namespace Insight.Database.Schema
 			sb.AppendLine();
 			sb.AppendLine("AS TABLE");
 			sb.AppendLine("(");
-			sb.AppendLine(Join(keys, ",", "{0} {2}"));
+			sb.AppendLine(Join(keys, ",", "{0} {5}"));
 			sb.AppendLine(")");
 
 			return sb.ToString();
@@ -979,7 +979,8 @@ namespace Insight.Database.Schema
 				col.ParameterName, 
 				col.SqlType, 
 				(col.IsUpdateNullable || col.IsIdentity) ? "NULL" : "NOT NULL",
-				col.IsUpdateNullable ? " = NULL" : "")));
+				col.IsUpdateNullable ? " = NULL" : "",
+				col.IsRowVersion ? "binary(8)" : col.SqlType)));
 		}
 
 		private static string Join(ColumnDefinition column, string divider, string template)
