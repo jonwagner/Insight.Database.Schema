@@ -529,18 +529,48 @@ namespace Insight.Database.Schema
 				oldColumn.DefaultIsSystemNamed = false;
 			}
 
-			// calculate which columns changed
+			// calculate which columns added/dropped
 			var missingColumns = oldColumns.Except(newColumns, compareColumns).ToList();
 			var addColumns = newColumns.Except(oldColumns, compareColumns).ToList();
+			#endregion
+
+			#region Rename Columns
+			// find all of the renames
+			var renames = Regex.Matches(schemaObject.Sql, String.Format("(?<newname>{0}) WAS (?<oldname>{0})", SqlParser.SqlNameExpression));
+
+			foreach (Match rename in renames)
+			{
+				var oldName = new SqlName(rename.Groups["oldname"].Value, 1);
+				var newName = new SqlName(rename.Groups["newname"].Value, 1);
+
+				if (missingColumns.Any(c => c.Name == oldName.Object) && addColumns.Any(c => c.Name == newName.Object))
+				{
+					var oldColumn = missingColumns.Single(c => c.Name == oldName.Object);
+
+					// don't need to add/remove the column
+					missingColumns.Remove(oldColumn);
+					addColumns.RemoveAll(c => c.Name == newName.Object);
+
+					// script the column rename
+					StringBuilder sb = new StringBuilder();
+					sb.AppendFormat("sp_rename '{0}.{1}' , '{2}', 'COLUMN'", oldTableName, oldName.ObjectFormatted, newName.Object);
+					context.AddObjects.Add(new SchemaObject(SchemaObjectType.UserPreScript, oldTableName, sb.ToString()));
+
+					// rename the old column in memory
+					oldColumn.Name = newName.Object;
+				}
+			}
+			#endregion
+
+			#region Change Columns
+			// find the changed columns
 			var changedColumns = newColumns.Where((dynamic cc) =>
 			{
 				dynamic oldColumn = oldColumns.FirstOrDefault(oc => compareColumns(cc, oc));
 
 				return (oldColumn != null) && (!areColumnsEqual(oldColumn, cc) || !areDefaultsEqual(oldColumn, cc));
 			}).ToList();
-			#endregion
 
-			#region Change Columns
 			// if we want to modify a computed column, we have to drop/add it
 			var changedComputedColumns = changedColumns.Where(c => c.Definition != null).ToList();
 			foreach (var cc in changedComputedColumns)

@@ -411,6 +411,26 @@ namespace Insight.Database.Schema.Tests
 		}
 		#endregion
 
+		#region Column Rename Tests
+		[Test]
+		public void TestColumnRename([ValueSource("ConnectionStrings")] string connectionString)
+		{
+			string before = "CREATE TABLE Insight_RenameTest ([ID] int NOT NULL, [Column] [int])";
+			string constraintBefore = "ALTER TABLE Insight_RenameTest ADD CONSTRAINT CK_Column CHECK ([Column] > 0)";
+			string after = "CREATE TABLE Insight_RenameTest ([ID] int NOT NULL, [Renamed] [int] NOT NULL) -- [Renamed] WAS [Column]";
+			string constraintAfter = "ALTER TABLE Insight_RenameTest ADD CONSTRAINT CK_Column CHECK (Renamed > 0)";
+
+			TestWithRollback(connectionString, connection =>
+			{
+				// set up the initial schema
+				InstallAndVerify(connection, new[] { before, constraintBefore });
+				connection.ExecuteSql("INSERT INTO Insight_RenameTest VALUES (1, 2)");
+				InstallAndVerify(connection, new[] { after, constraintAfter });
+				connection.ExecuteSql("SELECT ID, Renamed FROM Insight_RenameTest");
+			});	
+		}
+		#endregion
+
 		#region Sql Schema Tests
 		[Test]
 		public void TestGrantOnPrefixedTableType(
@@ -502,6 +522,7 @@ namespace Insight.Database.Schema.Tests
 		}
 		#endregion
 
+		#region Table With Data Tests
 		[Test]
 		public void TestTableWithDefaultAndData(
 			[ValueSource("ConnectionStrings")] string connectionString
@@ -517,6 +538,7 @@ namespace Insight.Database.Schema.Tests
 				Install(connection, after);
 			});
 		}
+		#endregion
 
 		#region Helper Functions
 		/// <summary>
