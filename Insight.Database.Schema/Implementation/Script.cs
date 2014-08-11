@@ -23,6 +23,11 @@ namespace Insight.Database.Schema.Implementation
 			return false;
 		}
 
+		public override bool CanModify(SchemaInstaller.InstallContext context, IDbConnection connection)
+		{
+			return true;
+		}
+
 		public override void Drop(IDbConnection connection)
 		{
 		}
