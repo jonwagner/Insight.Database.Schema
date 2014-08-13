@@ -295,5 +295,18 @@ namespace Insight.Database.Schema.Tests
             Assert.Throws<InvalidOperationException>(() => { string sql = p1.Sql; });
         }
         #endregion
+
+		[Test, ExpectedException(typeof(ArgumentException))]
+		public void CannotRenameWhenCreatingMoreThanOneProc()
+		{
+			AutoProc p = new AutoProc("AUTOPROC All [Beer] Name=Foo", Columns, null);
+		}
+
+		[Test]
+		public void CanRenameProcAndTVP()
+		{
+			AutoProc p = new AutoProc("AUTOPROC InsertMany [Beer] Name=YumBeer TVP=CaseOfBeer", Columns, null);
+			Assert.IsTrue(p.Sql.StartsWith("CREATE PROCEDURE [dbo].[YumBeer] (@Beer [dbo].[CaseOfBeer] READONLY)"));
+		}
     }
 }

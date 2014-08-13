@@ -51,6 +51,16 @@ namespace Insight.Database.Schema
 		private ProcTypes _type;
 
 		/// <summary>
+		/// For procs that use a TVP, allows the user to rename the TVP.
+		/// </summary>
+		private string _tvpName;
+
+		/// <summary>
+		/// For procs that use an ID TVP, allows the user to rename the ID TVP.
+		/// </summary>
+		private string _idtvpName;
+
+		/// <summary>
 		/// When set to true, dynamic SQL is executed as the owner of the procedure instead of the current user.
 		/// This allows you to require all access to tables be done through the stored procedures, but still allow access
 		/// to the Find procedure and other dynamic procedures.
@@ -65,7 +75,7 @@ namespace Insight.Database.Schema
 		/// <summary>
 		/// The RegEx used to detect and decode an AutoProc.
 		/// </summary>
-		internal static readonly string AutoProcRegexString = String.Format(CultureInfo.InvariantCulture, @"AUTOPROC\s+(?<type>\w[,\w]+)\s+(?<tablename>{0})(\s+Name=(?<name>[^\s]+))?(\s+Single=(?<single>[^\s]+))?(\s+Plural=(?<plural>[^\s]+))?(\s+ExecuteAsOwner=(?<execasowner>[^\s]+))?", SqlParser.SqlNameExpression);
+		internal static readonly string AutoProcRegexString = String.Format(CultureInfo.InvariantCulture, @"AUTOPROC\s+(?<type>\w[,\w]+)\s+(?<tablename>{0})(\s+Name=(?<name>[^\s]+))?(\s+IDTVP=(?<idtvp>[^\s]+))?(\s+TVP=(?<tvp>[^\s]+))?(\s+Single=(?<single>[^\s]+))?(\s+Plural=(?<plural>[^\s]+))?(\s+ExecuteAsOwner=(?<execasowner>[^\s]+))?", SqlParser.SqlNameExpression);
 
 		/// <summary>
 		/// The RegEx used to detect and decode an AutoProc.
@@ -124,7 +134,17 @@ namespace Insight.Database.Schema
 			// get the specified name
 			string procName = match.Groups["name"].Value;
 			if (!String.IsNullOrWhiteSpace(procName))
+			{
+				if (MoreThanOneBitIsSet((int)_type))
+					throw new ArgumentException("Can only rename an autoproc if generating one at a time.");
 				Name = SqlParser.FormatSqlName(procName);
+			}
+
+			//  check the exec as owner flag
+			if (!String.IsNullOrWhiteSpace(match.Groups["tvp"].Value))
+				_tvpName = match.Groups["tvp"].Value;
+			if (!String.IsNullOrWhiteSpace(match.Groups["idtvp"].Value))
+				_idtvpName = match.Groups["idtvp"].Value;
 
 			//  check the exec as owner flag
 			if (!String.IsNullOrWhiteSpace(match.Groups["execasowner"].Value))
@@ -903,9 +923,18 @@ namespace Insight.Database.Schema
 		/// <returns>The name of the table.</returns>
 		private string MakeTableName(string type)
 		{
+			string basename = null;
+
+			if (_type.ToString() == type)
+				basename = Name;
+			else if (type == "Table")
+				basename = _tvpName;
+			else if (type == "IdTable")
+				basename = _idtvpName;
+
 			// use the user-specified name or make one from the type
 			return SqlParser.FormatSqlName(_tableName.Schema,
-				String.Format(Name ?? "{1}{0}",
+				String.Format(basename ?? "{1}{0}",
 				type,
 				_tableName.Table));
 		}
@@ -1051,5 +1080,15 @@ namespace Insight.Database.Schema
 				Find
 		}
 		#endregion
+
+		/// <summary>
+		/// Determines whether more than one bit is set in an int.
+		/// </summary>
+		private static bool MoreThanOneBitIsSet(int x)
+		{
+			int rightmostbit = x & (-x);
+			x &= ~rightmostbit;
+			return x != 0;
+		}
 	}
 }
