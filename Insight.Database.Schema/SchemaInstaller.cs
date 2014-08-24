@@ -510,7 +510,8 @@ namespace Insight.Database.Schema
 				c1.IsIdentity == c2.IsIdentity &&
 				c1.IdentitySeed == c2.IdentitySeed &&
 				c1.IdentityIncrement == c2.IdentityIncrement &&
-				c1.Definition == c2.Definition
+				c1.Definition == c2.Definition &&
+				c1.CollationName == c2.CollationName
 				;
 			Func<dynamic, dynamic, bool> areDefaultsEqual = (dynamic c1, dynamic c2) =>
 				((String.Compare(c1.DefaultName, c2.DefaultName, StringComparison.OrdinalIgnoreCase) == 0) || (c1.DefaultIsSystemNamed == true && c2.DefaultIsSystemNamed == true)) &&
@@ -670,7 +671,7 @@ namespace Insight.Database.Schema
 		private IEnumerable<FastExpando> GetColumnsForTable(string tableName)
 		{
 			return _connection.QuerySql(String.Format(CultureInfo.InvariantCulture, @"
-				SELECT Name=c.name, ObjectID=c.object_id, ColumnID=c.column_id, TypeName = t.name, MaxLength=c.max_length, Precision=c.precision, Scale=c.scale, IsNullable=c.is_nullable, IsIdentity=c.is_identity, IdentitySeed=i.seed_value, IdentityIncrement=i.increment_value, Definition=cc.definition,
+				SELECT Name=c.name, ObjectID=c.object_id, ColumnID=c.column_id, TypeName = t.name, MaxLength=c.max_length, Precision=c.precision, Scale=c.scale, IsNullable=c.is_nullable, IsIdentity=c.is_identity, CollationName=c.Collation_Name,IdentitySeed=i.seed_value, IdentityIncrement=i.increment_value, Definition=cc.definition,
 				DefaultName=REPLACE(d.name, '{0}', ''), DefaultIsSystemNamed=d.is_system_named, DefaultDefinition=d.definition
 					FROM sys.columns c
 					JOIN sys.types t ON (c.system_type_id = t.system_type_id AND c.user_type_id = t.user_type_id)
@@ -716,6 +717,9 @@ namespace Insight.Database.Schema
 
 				if (column.IsIdentity)
 					sb.AppendFormat(" IDENTITY ({0}, {1})", column.IdentitySeed, column.IdentityIncrement);
+
+				if (column.CollationName != null)
+					sb.AppendFormat(" COLLATE {0}", column.CollationName);
 
 				if (column.IsNullable)
 					sb.Append(" NULL");
