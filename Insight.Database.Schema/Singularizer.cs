@@ -59,7 +59,7 @@ namespace Insight.Database.Schema
                     {"(octop|vir)i$", "$1us"},
                     {"(.+(ase))s$", @"$1"},
                     {"(.+(s|x|sh|ch))es$", @"$1"},
-                    {"(.+)s", @"$1"}
+                    {"(.+)s$", @"$1"}
                 };
 
 		/// <summary>

@@ -31,6 +31,7 @@ namespace Insight.Database.Schema.Tests
 			Test("case", "cases");
 			Test("objective", "objectives");
 			Test("size", "sizes");
+            Test("user", "user");
 		}
 		#endregion
 	}
