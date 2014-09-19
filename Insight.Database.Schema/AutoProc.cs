@@ -23,7 +23,7 @@ namespace Insight.Database.Schema
 		/// <summary>
 		/// A string that is added to the hash of the dependencies so that the AutoProc can be forced to change if the internal implementation changes.
 		/// </summary>
-		private static string VersionSignature = "2.2.3.0";
+		private static string VersionSignature = "2.2.8.0";
 
 		/// <summary>
 		/// The exception thrown when an optimistic concurrency error is detected.
@@ -260,7 +260,7 @@ namespace Insight.Database.Schema
 			return sb.ToString();
 		}
 
-		private static string GenerateOutputTable(IList<ColumnDefinition> columns)
+		private static string GenerateOutputTable(IList<ColumnDefinition> columns, bool addRowNumber = false)
 		{
 			StringBuilder sb = new StringBuilder();
 
@@ -269,6 +269,11 @@ namespace Insight.Database.Schema
 				String.Format("{0} {1}", 
 				c.ColumnName,
 				(String.Compare(c.SqlType, "rowversion", StringComparison.OrdinalIgnoreCase) == 0 || String.Compare(c.SqlType, "timestamp", StringComparison.OrdinalIgnoreCase) == 0) ? "binary(8)" : c.SqlType))));
+			if (addRowNumber)
+			{
+				sb.AppendLine(",");
+				sb.AppendLine("[_insight_rownumber] [int]");
+			}
 			sb.AppendLine(")");
 
 			return sb.ToString();
@@ -710,7 +715,7 @@ namespace Insight.Database.Schema
 			sb.AppendLine("AS");
 			if (outputs.Any())
 			{
-				sb.AppendLine(GenerateOutputTable(outputs));
+				sb.AppendLine(GenerateOutputTable(outputs, addRowNumber: true));
 			}
 			if (optimistic)
 			{
@@ -721,7 +726,7 @@ namespace Insight.Database.Schema
 
 			sb.AppendFormat("MERGE INTO {0} AS t", _tableName.SchemaQualifiedTable);
 			sb.AppendLine();
-			sb.AppendFormat("USING @{0} AS s", parameterName);
+			sb.AppendFormat("USING (SELECT *, [_insight_rownumber] = ROW_NUMBER() OVER (ORDER BY (SELECT 1)) FROM @{0}) AS s", parameterName);
 			sb.AppendLine();
 			sb.AppendLine("ON");
 			sb.AppendLine("(");
@@ -750,6 +755,7 @@ namespace Insight.Database.Schema
 			{
 				sb.AppendLine("OUTPUT");
 				sb.AppendLine(Join(outputs, ",", "Inserted.{0}"));
+				sb.AppendLine(", s.[_insight_rownumber]");
 				sb.AppendLine("INTO @T");
 			}
 			sb.AppendLine(";");
@@ -761,7 +767,9 @@ namespace Insight.Database.Schema
 			}
 			if (outputs.Any())
 			{
-				sb.AppendLine("SELECT * FROM @T");
+				sb.AppendLine("SELECT ");
+				sb.AppendLine(Join(outputs, ",", "{0}"));
+				sb.AppendLine("FROM @T ORDER BY [_insight_rownumber]");
 			}
 			return sb.ToString();
 		}

@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Moq;
 using NUnit.Framework;
+using System.Data.SqlClient;
 
 namespace Insight.Database.Schema.Tests
 {
@@ -309,4 +310,60 @@ namespace Insight.Database.Schema.Tests
 			Assert.IsTrue(p.Sql.StartsWith("CREATE PROCEDURE [dbo].[YumBeer] (@Beer [dbo].[CaseOfBeer] READONLY)"));
 		}
     }
+
+	[TestFixture]
+	public class AutoProcExecutingTests : BaseInstallerTest
+	{
+		/// <summary>
+		/// Related to Issue #34.
+		/// For Insert/Update/UpsertMANY, we rely on SQL to read the TVP in order and return the IDs/outputs in order.
+		/// It does this for Insert/Update, but for Upsert, it does the updates first, then the inserts.
+		/// This tests that UpsertMany properly handles that.
+		/// </summary>
+		[Test]
+		public void UpsertShouldReturnRowsInOrder()
+		{
+			var connectionString = base.ConnectionStrings.First();
+
+			TestWithDrop(connectionString, () =>
+			{
+				using (var c = new SqlConnection(connectionString))
+				{
+					if (!SchemaInstaller.DatabaseExists(connectionString))
+						SchemaInstaller.CreateDatabase(connectionString);
+					c.Open();
+
+					SchemaInstaller installer = new SchemaInstaller(c);
+					SchemaObjectCollection schema = new SchemaObjectCollection();
+					schema.Add("CREATE TABLE Beer ([id] [int] NOT NULL IDENTITY, [name] varchar(100))");
+					schema.Add("ALTER TABLE Beer ADD CONSTRAINT PK_Beer PRIMARY KEY ([ID])");
+					schema.Add("-- AUTOPROC All Beer");
+					installer.Install("test", schema);
+
+					using (var reader = c.GetReaderSql(@"
+						truncate table Beer
+
+						declare @b BeerTable
+						insert into @b (id, name) values (null, 'one')
+						insert into @b (id, name) values (null, 'two')
+
+						exec upsertBeers @b
+
+						delete from @b
+						insert into @b (id, name) values (1, 'one')
+						insert into @b (id, name) values (2, 'two')
+						insert into @b (id, name) values (null, 'three')
+
+						exec upsertBeers @b
+					"))
+					{
+						reader.NextResult();
+						reader.Read(); Assert.AreEqual(1, reader.GetInt32(0));
+						reader.Read(); Assert.AreEqual(2, reader.GetInt32(0));
+						reader.Read(); Assert.AreEqual(3, reader.GetInt32(0));
+					}
+				}
+			});
+		}	
+	}
 }
