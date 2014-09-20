@@ -17,7 +17,7 @@ namespace Insight.Database.Schema
 	///		AUTOPROC Insert [Beer] InsertBeer
 	///		GO
 	/// </summary>
-	class AutoProc
+	public class AutoProc
 	{
 		#region Private Members
 		/// <summary>
@@ -1055,7 +1055,7 @@ namespace Insight.Database.Schema
 		/// The types of stored procedures that we support.
 		/// </summary>
 		[Flags]
-		internal enum ProcTypes
+		public enum ProcTypes
 		{
 			Table = 1 << 0,
 			IdTable = 1 << 1,
