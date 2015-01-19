@@ -21,7 +21,8 @@ namespace Insight.Database.Schema.Implementation
 			Match m = Regex.Match(Name.Original, String.Format(CultureInfo.InvariantCulture, @"(?<permission>\w+)\s+ON\s+(?<object>{0})\s+TO\s+(?<user>{0})", SqlParser.SqlNameExpression));
 
 			var userName = new SqlName(m.Groups["user"].Value, 1);
-			var objectName = new SqlName(m.Groups["object"].Value, 2);
+			var o = m.Groups["object"].Value;
+			var objectName = new SqlName(o, o.Contains("TYPE::[dbo]") ? 3 : 2);
 
 			var permissions = connection.QuerySql(@"SELECT PermissionName=p.permission_name, ObjectType=ISNULL(o.type_desc, p.class_desc)
 					FROM sys.database_principals u
