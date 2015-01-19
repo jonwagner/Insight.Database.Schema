@@ -1198,7 +1198,7 @@ namespace Insight.Database.Schema
 		private void DropObjects(IEnumerable<SchemaRegistryEntry> dropObjects)
         {
             // drop objects
-            foreach (var dropObject in dropObjects)
+            foreach (var dropObject in dropObjects.Distinct())
             {
                 if (DroppingObject != null)
 					DroppingObject(this, new SchemaEventArgs(SchemaEventType.BeforeDrop, dropObject.ObjectName));
