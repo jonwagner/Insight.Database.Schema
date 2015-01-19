@@ -103,6 +103,8 @@ namespace Insight.Database.Schema.Implementation
 					return new Service(name, sql);
 				case SchemaObjectType.StoredProcedure:
 					return new StoredProcedure(name, sql);
+				case SchemaObjectType.SymmetricKey:
+					return new SymmetricKey(name, sql);
 				case SchemaObjectType.Table:
 					return new Table(name, sql);
 				case SchemaObjectType.Trigger:
