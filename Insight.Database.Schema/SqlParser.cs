@@ -47,8 +47,8 @@ namespace Insight.Database.Schema
 			parsers.Add(new SqlParser(SchemaObjectType.Permission, String.Format(CultureInfo.InvariantCulture, @"GRANT\s+(?<permission>\w+(\s*,\s*\w+)*)\s+ON\s+(?<name>{0})\s+TO\s+(?<grantee>{0})", SqlNameExpression), "$1 ON $2 TO $3"));
 			parsers.Add(new SqlParser(SchemaObjectType.PrimaryKey, String.Format(CultureInfo.InvariantCulture, @"ALTER\s+TABLE\s+(?<tablename>{0})\s+(WITH\s+(NO)?CHECK\s+)?ADD\s+CONSTRAINT\s*\(?(?<name>{0})\)?\s+PRIMARY\s+", SqlNameExpression), "$1.$2"));
 			parsers.Add(new SqlParser(SchemaObjectType.ForeignKey, String.Format(CultureInfo.InvariantCulture, @"ALTER\s+TABLE\s+(?<tablename>{0})\s+(WITH\s+(NO)?CHECK\s+)?ADD\s+CONSTRAINT\s*\(?(?<name>{0})\)?\s+FOREIGN\s+KEY\s*\(?(?<name>{0})\)?", SqlNameExpression), "$1.$2"));
-			parsers.Add(new SqlParser(SchemaObjectType.Constraint, String.Format(CultureInfo.InvariantCulture, @"ALTER\s+TABLE\s+(?<tablename>{0})\s+(WITH\s+(NO)?CHECK\s+)?ADD\s+(((CHECK\s+)?CONSTRAINT))\s*\(?(?<name>{0})\)?", SqlNameExpression), "$1.$2"));
-			parsers.Add(new SqlParser(SchemaObjectType.Default, String.Format(CultureInfo.InvariantCulture, @"ALTER\s+TABLE\s+(?<tablename>{0})\s+ADD\s+(CONSTRAINT\s+(?<name>{0})\s+)?DEFAULT\s*\(?.*\)?FOR\s+(?<column>{0})", SqlNameExpression), "$1.$3"));
+			parsers.Add(new SqlParser(SchemaObjectType.Constraint, String.Format(CultureInfo.InvariantCulture, @"ALTER\s+TABLE\s+(?<tablename>{0})\s+(WITH\s+(NO)?CHECK\s+)?ADD\s+((CHECK\s+)?CONSTRAINT)\s*\(?(?<name>{0})\)?", SqlNameExpression), "$1.$2"));
+            parsers.Add(new SqlParser(SchemaObjectType.Default, String.Format(CultureInfo.InvariantCulture, @"ALTER\s+TABLE\s+(?<tablename>{0})\s+ADD\s+(CONSTRAINT\s+(?<name>{0})\s+)?DEFAULT\s*\(?.*\)?FOR\s+(?<column>{0})", SqlNameExpression), "$1.$3"));
 			parsers.Add(new SqlParser(SchemaObjectType.Function, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+FUNCTION\s+(?<name>{0})", SqlNameExpression)));
 			parsers.Add(new SqlParser(SchemaObjectType.PrimaryXmlIndex, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+PRIMARY\s+XML\s+INDEX\s+(?<name>{0})\s+ON\s+(?<tablename>{0})", SqlNameExpression), "$2.$1"));
 			parsers.Add(new SqlParser(SchemaObjectType.SecondaryXmlIndex, String.Format(CultureInfo.InvariantCulture, @"CREATE\s+XML\s+INDEX\s+(?<name>{0})\s+ON\s+(?<tablename>{0})", SqlNameExpression), "$2.$1"));
@@ -63,7 +63,7 @@ namespace Insight.Database.Schema
 			parsers.Add(new SqlParser(SchemaObjectType.Unused, String.Format(CultureInfo.InvariantCulture, @"SET\s+ANSI_PADDING", SqlNameExpression), null));
 			parsers.Add(new SqlParser(SchemaObjectType.Unused, String.Format(CultureInfo.InvariantCulture, @"SET\s+ANSI_WARNINGS", SqlNameExpression), null));
 			parsers.Add(new SqlParser(SchemaObjectType.Unused, String.Format(CultureInfo.InvariantCulture, @"SET\s+NUMERIC_ROUNDABORT", SqlNameExpression), null));
-			parsers.Add(new SqlParser(SchemaObjectType.Unused, String.Format(CultureInfo.InvariantCulture, @"ALTER\s+TABLE\s+(?<tablename>{0})\s+(WITH\s+(NO)?CHECK\s+)?(?!ADD\s+)(((CHECK\s+)?CONSTRAINT)|(DEFAULT))\s*\(?(?<name>{0})\)?", SqlNameExpression), "$1.$2"));
+			parsers.Add(new SqlParser(SchemaObjectType.Script, String.Format(CultureInfo.InvariantCulture, @"ALTER\s+TABLE\s+(?<tablename>{0})\s+(WITH\s+(NO)?CHECK\s+)?(?!ADD\s+)(((CHECK\s+)?CONSTRAINT)|(DEFAULT))\s*\(?(?<name>{0})\)?", SqlNameExpression), "SCRIPT $1.$2"));
 			parsers.Add(new SqlParser(SchemaObjectType.AutoProc, AutoProc.AutoProcRegexString, "$0"));
 
 			// make sure that they are sorted in the order of likelihood
