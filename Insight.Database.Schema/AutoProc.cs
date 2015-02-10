@@ -112,7 +112,7 @@ namespace Insight.Database.Schema
 
 			// break up the name into its components
 			var match = new Regex(AutoProcRegexString, RegexOptions.IgnoreCase).Match(name);
-			_type = (ProcTypes)Enum.Parse(typeof(ProcTypes), match.Groups["type"].Value);
+			_type = (ProcTypes)Enum.Parse(typeof(ProcTypes), match.Groups["type"].Value, true);
 			_tableName = new SqlName(match.Groups["tablename"].Value, 2);
 
 			// generate the singular table name
