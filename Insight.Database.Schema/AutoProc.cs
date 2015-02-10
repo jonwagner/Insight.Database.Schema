@@ -134,11 +134,7 @@ namespace Insight.Database.Schema
 			// get the specified name
 			string procName = match.Groups["name"].Value;
 			if (!String.IsNullOrWhiteSpace(procName))
-			{
-				if (MoreThanOneBitIsSet((int)_type))
-					throw new ArgumentException("Can only rename an autoproc if generating one at a time.");
 				Name = SqlParser.FormatSqlName(procName);
-			}
 
 			//  check the exec as owner flag
 			if (!String.IsNullOrWhiteSpace(match.Groups["tvp"].Value))
@@ -909,6 +905,15 @@ namespace Insight.Database.Schema
 		#endregion
 
 		#region Proc Name Methods
+        /// <summary>
+        /// Determines if we are generating all types of procs with this autoproc.
+        /// </summary>
+        /// <returns></returns>
+        private bool IsAllProcs
+        {
+            get { return MoreThanOneBitIsSet((int)_type); }
+        }
+
 		/// <summary>
 		/// Make a procedure name for a given type of procedure.
 		/// </summary>
@@ -916,12 +921,15 @@ namespace Insight.Database.Schema
 		/// <returns>The name of the procedure.</returns>
 		private string MakeProcName(string type, bool plural)
 		{
+            var objectName = plural ? _pluralTableName : _singularTableName;
+
 			// use the user-specified name or make one from the type
-			return SqlParser.FormatSqlName(_tableName.Schema,
-					String.Format(Name ?? (plural ? "{0}{1}" : "{0}{2}"),
-				type,
-				_pluralTableName,
-				_singularTableName));
+            // params 1&2 are the same for backward compabitility
+            return SqlParser.FormatSqlName(_tableName.Schema,
+                    String.Format(Name ?? (plural ? "{0}{1}" : "{0}{2}"),
+                type,
+                IsAllProcs ? objectName : _pluralTableName,
+                IsAllProcs ? objectName : _singularTableName));
 		}
 
 		/// <summary>

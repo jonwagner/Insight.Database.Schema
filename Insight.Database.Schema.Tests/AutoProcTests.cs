@@ -297,12 +297,6 @@ namespace Insight.Database.Schema.Tests
         }
         #endregion
 
-		[Test, ExpectedException(typeof(ArgumentException))]
-		public void CannotRenameWhenCreatingMoreThanOneProc()
-		{
-			AutoProc p = new AutoProc("AUTOPROC All [Beer] Name=Foo", Columns, null);
-		}
-
 		[Test]
 		public void CanRenameProcAndTVP()
 		{

@@ -76,6 +76,13 @@ namespace Insight.Database.Schema.Tests
 
 				@"-- AUTOPROC All [Beer]",
 			},
+            // autoproc with renamed single/plural
+            new string[]
+            {
+				@"CREATE TABLE Beer ([ID] [int] NOT NULL, Description [varchar](128))",
+				@"ALTER TABLE [Beer] ADD CONSTRAINT PK_Beer PRIMARY KEY ([ID])",
+				@"-- AUTOPROC All [Beer] Name={2}_{0} Single=Brewski Plural=Brewskis",
+            },
 			// set of dependencies based on user-defined types
 			new string[]
 			{
