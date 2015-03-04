@@ -555,7 +555,7 @@ namespace Insight.Database.Schema
 					// script the column rename
 					StringBuilder sb = new StringBuilder();
 					sb.AppendFormat("sp_rename '{0}.{1}' , '{2}', 'COLUMN'", oldTableName, oldName.ObjectFormatted, newName.Object);
-					context.AddObjects.Add(new SchemaObject(SchemaObjectType.UserPreScript, oldTableName, sb.ToString()));
+					context.AddObjects.Add(new SchemaObject(SchemaObjectType.InternalPreScript, oldTableName, sb.ToString()));
 
 					// rename the old column in memory
 					oldColumn.Name = newName.Object;

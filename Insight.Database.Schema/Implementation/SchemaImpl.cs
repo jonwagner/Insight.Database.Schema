@@ -118,7 +118,8 @@ namespace Insight.Database.Schema.Implementation
 
 
 				case SchemaObjectType.UserPreScript:
-				case SchemaObjectType.Unused:
+                case SchemaObjectType.InternalPreScript:
+                case SchemaObjectType.Unused:
 				case SchemaObjectType.Script:
 				case SchemaObjectType.UserScript:
 					return new Script(name, sql);

@@ -547,8 +547,40 @@ namespace Insight.Database.Schema.Tests
 		}
 		#endregion
 
-		#region Helper Functions
-		/// <summary>
+        #region Prescript Tests
+        /// <summary>
+        /// User Prescripts need to run before we start modifying tables. So, now table modifications run after prescript.
+        /// </summary>
+        [Test]
+        public void TestModifyTableDuringPrescript([ValueSource("ConnectionStrings")] string connectionString)
+        {
+            var before = new List<string>()
+			{
+                @"CREATE TABLE TestTable (PK int)",
+			};
+
+            var after = new List<string>()
+			{
+                @"CREATE TABLE TestTable (ID int) -- ID WAS PK",
+                @"-- PRESCRIPT ModifyTable
+                    ALTER TABLE TestTable ALTER COLUMN PK int NOT NULL
+                ",
+			};
+
+            TestWithRollback(connectionString, connection =>
+            {
+                Install(connection, before);
+                VerifyObjectsAndRegistry(before, connection);
+                Install(connection, after);
+                VerifyObjectsAndRegistry(after, connection);
+            });
+        }
+
+        #endregion
+
+
+        #region Helper Functions
+        /// <summary>
 		/// Verify all of the objects in the database and registry.
 		/// </summary>
 		/// <param name="schema">The schema to verify.</param>

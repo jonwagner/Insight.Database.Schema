@@ -22,6 +22,12 @@ namespace Insight.Database.Schema
 		[SuppressMessage("Microsoft.Naming", "CA1702:CompoundWordsShouldBeCasedCorrectly", MessageId = "PreScript", Justification="This field value is stored in databases")]
 		UserPreScript,
 
+        /// <summary>
+        /// An internal script that needs to run early, but after user scripts
+        /// </summary>
+        [SuppressMessage("Microsoft.Naming", "CA1702:CompoundWordsShouldBeCasedCorrectly", MessageId = "PreScript", Justification = "This field value is stored in databases")]
+        InternalPreScript,
+
 		/// <summary>
 		/// A SQL Server 2005 ROLE
 		/// </summary>
