@@ -871,6 +871,7 @@ namespace Insight.Database.Schema
 				{
 					case "SQL_STORED_PROCEDURE":
 					case "SQL_SCALAR_FUNCTION":
+					case "SQL_INLINE_TABLE_VALUED_FUNCTION":
 					case "SQL_TABLE_VALUED_FUNCTION":
 					case "SQL_TRIGGER":
 					case "VIEW":
