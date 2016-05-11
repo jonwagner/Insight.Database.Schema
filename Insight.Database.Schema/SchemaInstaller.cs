@@ -95,7 +95,7 @@ namespace Insight.Database.Schema
         /// </summary>
         /// <returns>True if the database was created, false if it already exists.</returns>
         /// <exception cref="SqlException">If the database name is invalid.</exception>
-		public static bool CreateDatabase (string connectionString)
+		public static bool CreateDatabase (string connectionString, string filePath = null)
         {
 			if (connectionString == null)
 				throw new ArgumentNullException("connectionString");
@@ -108,10 +108,13 @@ namespace Insight.Database.Schema
 			string databaseName = builder.InitialCatalog;
 
 			using (var connection = OpenMasterConnection(connectionString))
-			using (var command = new SqlCommand(String.Format(CultureInfo.InvariantCulture, "CREATE DATABASE [{0}]", databaseName), connection))
 			{
-				command.ExecuteNonQuery();
-            }
+				string createTempalte = string.IsNullOrWhiteSpace(filePath) ? "CREATE DATABASE [{0}]" : "CREATE DATABASE [{0}] on (NAME=[{0}], FILENAME='{1}\\{0}.mdf')";
+				using (var command = new SqlCommand(String.Format(CultureInfo.InvariantCulture, createTempalte, databaseName, filePath), connection))
+				{
+					command.ExecuteNonQuery();
+				}
+			}
 
 			return true;
 		}

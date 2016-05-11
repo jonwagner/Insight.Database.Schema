@@ -56,6 +56,26 @@ namespace Insight.Database.Schema.Tests
 				Assert.False(SchemaInstaller.CreateDatabase(connectionString));
 			});
 		}
+
+		[Test]
+		public void TestCreateDatabaseWithPath([ValueSource("ConnectionStrings")] string connectionString)
+		{
+			TestWithDrop(connectionString, () =>
+			{
+				// drop the database if it already exists
+				if (SchemaInstaller.DatabaseExists(connectionString))
+					SchemaInstaller.DropDatabase(connectionString);
+
+				// create the database
+				Assert.True(SchemaInstaller.CreateDatabase(connectionString, ConfigurationManager.AppSettings["filepath"] ?? Environment.GetEnvironmentVariable("TEMP")));
+
+				// make sure the database exises
+				Assert.True(SchemaInstaller.DatabaseExists(connectionString));
+
+				// create the database again, it should return false
+				Assert.False(SchemaInstaller.CreateDatabase(connectionString));
+			});
+		}
 		#endregion
 
 		#region Drop Tests
