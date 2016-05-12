@@ -93,9 +93,10 @@ namespace Insight.Database.Schema
         /// <summary>
         /// Create a database on the specified connection if it does not exist.
         /// </summary>
+		/// <param name="folderPath">The full path to the folder which will contain the database filles.</param>
         /// <returns>True if the database was created, false if it already exists.</returns>
         /// <exception cref="SqlException">If the database name is invalid.</exception>
-		public static bool CreateDatabase (string connectionString, string filePath = null)
+		public static bool CreateDatabase (string connectionString, string folderPath = null)
         {
 			if (connectionString == null)
 				throw new ArgumentNullException("connectionString");
@@ -109,8 +110,8 @@ namespace Insight.Database.Schema
 
 			using (var connection = OpenMasterConnection(connectionString))
 			{
-				string createTempalte = string.IsNullOrWhiteSpace(filePath) ? "CREATE DATABASE [{0}]" : "CREATE DATABASE [{0}] on (NAME=[{0}], FILENAME='{1}\\{0}.mdf')";
-				using (var command = new SqlCommand(String.Format(CultureInfo.InvariantCulture, createTempalte, databaseName, filePath), connection))
+				string createTempalte = string.IsNullOrWhiteSpace(folderPath) ? "CREATE DATABASE [{0}]" : "CREATE DATABASE [{0}] on (NAME=[{0}], FILENAME='{1}\\{0}.mdf')";
+				using (var command = new SqlCommand(String.Format(CultureInfo.InvariantCulture, createTempalte, databaseName, folderPath), connection))
 				{
 					command.ExecuteNonQuery();
 				}
