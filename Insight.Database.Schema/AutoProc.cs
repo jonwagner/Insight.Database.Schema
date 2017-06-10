@@ -860,7 +860,7 @@ namespace Insight.Database.Schema
 			sb.AppendLine("\t@OrderBy [nvarchar](256) = NULL,");
 			sb.AppendLine("\t@ThenBy [nvarchar](256) = NULL,");
 			sb.AppendLine("\t@TotalRows [int] = NULL OUTPUT,");
-			sb.AppendLine(Join(columns, ",", "{1}Operator [varchar](10) = '='"));
+			sb.AppendLine(Join(columns, ",", "{1}Operator [varchar](11) = '='"));
 			sb.AppendLine(")");
 			if (_executeAsOwner)
 				sb.AppendLine("WITH EXECUTE AS OWNER");
