@@ -214,15 +214,7 @@ namespace Insight.Database.Schema.Tests
 		{
 			AutoProc p = new AutoProc("AUTOPROC Table [Beer]", Columns, null);
 
-			Assert.AreEqual("CREATE TYPE [dbo].[BeerTable]\r\nAS TABLE\r\n(\r\n\t[ID] int NULL,\r\n\t[Name] varchar(256) NOT NULL,\r\n\t[OriginalGravity] decimal(18,2) NOT NULL\r\n)\r\n\r\nGO\r\n", p.Sql);
-		}
-
-		[Test]
-		public void TestInsertManyGeneration()
-		{
-			AutoProc p = new AutoProc("AUTOPROC InsertMany [Beer]", Columns, null);
-
-			Assert.AreEqual("CREATE PROCEDURE [dbo].[InsertBeers] (@Beer [dbo].[BeerTable] READONLY)\r\nAS\r\nDECLARE @T TABLE(\r\n[ID] int)\r\n\r\nINSERT INTO [dbo].[Beer]\r\n(\r\n\t[Name],\r\n\t[OriginalGravity]\r\n)\r\nOUTPUT\r\n\tInserted.[ID]\r\nINTO @T\r\nSELECT\r\n\t[Name],\r\n\t[OriginalGravity]\r\nFROM @Beer\r\nSELECT * FROM @T\r\n\r\nGO\r\n", p.Sql);
+			Assert.AreEqual("CREATE TYPE [dbo].[BeerTable]\r\nAS TABLE\r\n(\r\n\t[ID] int NULL,\r\n\t[Name] varchar(256) NOT NULL,\r\n\t[OriginalGravity] decimal(18,2) NOT NULL\r\n,[_insight_rownumber] [int] IDENTITY\r\n)\r\n\r\nGO\r\n", p.Sql);
 		}
 		#endregion
 

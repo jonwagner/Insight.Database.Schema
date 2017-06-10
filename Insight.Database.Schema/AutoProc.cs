@@ -520,6 +520,7 @@ namespace Insight.Database.Schema
 			sb.AppendLine("AS TABLE");
 			sb.AppendLine("(");
 			sb.AppendLine(Join(columns, ",", "{0} {5} {3}"));
+			sb.AppendLine(",[_insight_rownumber] [int] IDENTITY");
 			sb.AppendLine(")");
 
 			return sb.ToString();
@@ -544,6 +545,7 @@ namespace Insight.Database.Schema
 			sb.AppendLine("AS TABLE");
 			sb.AppendLine("(");
 			sb.AppendLine(Join(keys, ",", "{0} {5}"));
+			sb.AppendLine(",[_insight_rownumber] [int] IDENTITY");
 			sb.AppendLine(")");
 
 			return sb.ToString();
@@ -583,8 +585,9 @@ namespace Insight.Database.Schema
 		/// <returns>The stored procedure SQL.</returns>
 		private string GenerateInsertManySql(IList<ColumnDefinition> columns)
 		{
-			IList<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly || c.IsRowVersion || c.HasDefault).ToList();
+			IEnumerable<ColumnDefinition> keys = columns.Where(c => c.IsKey);
 			IEnumerable<ColumnDefinition> insertable = columns.Where(c => !c.IsReadOnly);
+			IList<ColumnDefinition> outputs = columns.Where(c => c.IsReadOnly || c.IsRowVersion || c.HasDefault).ToList();
 
 			string parameterName = _singularTableName;
 
@@ -595,29 +598,42 @@ namespace Insight.Database.Schema
 			sb.AppendLine("AS");
 			if (outputs.Any())
 			{
-				sb.AppendLine(GenerateOutputTable(outputs));
+				sb.AppendLine(GenerateOutputTable(outputs, addRowNumber: true));
 			}
-			sb.AppendFormat("INSERT INTO {0}", _tableName.SchemaQualifiedTable);
+
+			sb.AppendFormat("MERGE INTO {0} AS t", _tableName.SchemaQualifiedTable);
 			sb.AppendLine();
+			sb.AppendFormat("USING (SELECT * FROM @{0}) AS s", parameterName);
+			sb.AppendLine();
+			sb.AppendLine("ON");
+			sb.AppendLine("(");
+			sb.AppendLine(Join(keys, " AND", "t.{0} = s.{0}"));
+			sb.AppendLine(")");
 			if (insertable.Any())
 			{
+				sb.AppendLine("WHEN NOT MATCHED BY TARGET THEN INSERT");
 				sb.AppendLine("(");
 				sb.AppendLine(Join(insertable, ",", "{0}"));
+				sb.AppendLine(")");
+				sb.AppendLine("VALUES");
+				sb.AppendLine("(");
+				sb.AppendLine(Join(insertable, ",", "s.{0}"));
 				sb.AppendLine(")");
 			}
 			if (outputs.Any())
 			{
 				sb.AppendLine("OUTPUT");
 				sb.AppendLine(Join(outputs, ",", "Inserted.{0}"));
+				sb.AppendLine(", s.[_insight_rownumber]");
 				sb.AppendLine("INTO @T");
 			}
-			sb.AppendLine("SELECT");
-			sb.AppendLine(Join(insertable, ",", "{0}"));
-			sb.AppendFormat("FROM @{0}", parameterName);
-			sb.AppendLine();
+			sb.AppendLine(";");
+
 			if (outputs.Any())
 			{
-				sb.AppendLine("SELECT * FROM @T");
+				sb.AppendLine("SELECT ");
+				sb.AppendLine(Join(outputs, ",", "{0}"));
+				sb.AppendLine("FROM @T ORDER BY [_insight_rownumber]");
 			}
 			return sb.ToString();
 		}
@@ -722,7 +738,7 @@ namespace Insight.Database.Schema
 
 			sb.AppendFormat("MERGE INTO {0} AS t", _tableName.SchemaQualifiedTable);
 			sb.AppendLine();
-			sb.AppendFormat("USING (SELECT *, [_insight_rownumber] = ROW_NUMBER() OVER (ORDER BY (SELECT 1)) FROM @{0}) AS s", parameterName);
+			sb.AppendFormat("USING (SELECT * FROM @{0}) AS s", parameterName);
 			sb.AppendLine();
 			sb.AppendLine("ON");
 			sb.AppendLine("(");
